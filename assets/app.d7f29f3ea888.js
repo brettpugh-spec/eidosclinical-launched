@@ -985,7 +985,7 @@ const PATIENT_EDU = {
 
   'Proximal Hamstring Tendinopathy': `This is irritation of the hamstring tendon right where it attaches to your sit bone (the bony prominence you feel when you sit down). It's most common in middle-aged runners and cyclists. The hallmark is pain deep in the buttock when sitting, especially on hard surfaces, or during uphill running. Unlike a hamstring strain, it usually builds gradually rather than coming on suddenly. Avoid sitting for long periods on hard surfaces and stretching the hamstring aggressively — both can make it worse in the short term. Progressive loading through exercises like Nordic curls is the evidence-based treatment.`,
 
-  'Hip Adductor Strain': `Your adductor muscles run along the inner thigh and pull your legs together. A strain — especially at the groin — is one of the most common sports injuries, typically happening during a sharp sideways movement, tackle, or kick. You'll feel pain along the inner thigh or groin, often reproduced when you try to squeeze your legs together. Most adductor strains recover well with progressive strengthening, but they need time — typically 4–8 weeks for moderate strains. Returning too early is the main reason they become recurring problems.`,
+  'Hip Adductor Tendinopathy / Strain': `Your adductor muscles run along the inner thigh and pull your legs together. A strain — especially at the groin — is one of the most common sports injuries, typically happening during a sharp sideways movement, tackle, or kick. You'll feel pain along the inner thigh or groin, often reproduced when you try to squeeze your legs together. Most adductor strains recover well with progressive strengthening, but they need time — typically 4–8 weeks for moderate strains. Returning too early is the main reason they become recurring problems.`,
 
   'Gluteal Tendinopathy (Glute Med / Min)': `Your gluteal tendons are the tendons of the medium and small muscles on the outer side of your hip. When they become overloaded — often in middle-aged women, walkers, or people who stand a lot — they can become persistently painful. You'll feel it as an ache on the outer hip, sometimes radiating into the outer thigh, that's worse when lying on that side, crossing your legs, or walking uphill. Counterintuitively, complete rest makes it worse — these tendons need progressive loading to recover. Avoid positions that compress the tendon (like crossing your legs) and work with a physio on a graduated strengthening program.`,
 
@@ -997,9 +997,9 @@ const PATIENT_EDU = {
 
   'Pelvic Girdle Pain (PGP)': `Pelvic girdle pain is pain felt at the front or back of the pelvis — around the pubic bone or the joints where the pelvis meets the spine (SI joints). It's most common during and after pregnancy, but can affect anyone. Movement like walking, climbing stairs, rolling in bed, or standing on one leg often brings it on. It happens when the joints of the pelvis aren't moving quite in sync, putting uneven strain on the surrounding structures. Core and pelvic floor strengthening, along with some activity modification, makes a big difference for most people.`,
 
-  'Athletic Pubalgia (Sports Hernia / Core Muscle Injury)': `Despite the name, a sports hernia isn't actually a hernia in the traditional sense — there's no bulge. It's an injury to the muscles or tendons around the lower abdominal wall and groin, usually from the repeated high-intensity twisting and kicking movements in sports like football or hockey. You'll feel a deep aching pain in the groin and lower abdomen that's worse with exertion and better with rest. Conservative rehabilitation focusing on core and hip strength is first-line; some people need a minor surgical repair if conservative management doesn't work.`,
+  'Athletic Pubalgia (Sports Hernia)': `Despite the name, a sports hernia isn't actually a hernia in the traditional sense — there's no bulge. It's an injury to the muscles or tendons around the lower abdominal wall and groin, usually from the repeated high-intensity twisting and kicking movements in sports like football or hockey. You'll feel a deep aching pain in the groin and lower abdomen that's worse with exertion and better with rest. Conservative rehabilitation focusing on core and hip strength is first-line; some people need a minor surgical repair if conservative management doesn't work.`,
 
-  '⚠️ Stress Fracture (Femoral Neck / Pubic Ramus) — RED FLAG': `A stress fracture in the hip area is a small crack in the bone, usually from repetitive loading rather than a single trauma. In the femoral neck (the top of the thigh bone just below the hip joint), this is a serious injury that needs urgent medical attention — if missed, it can progress to a complete fracture. If you're a runner with groin pain that gets worse with activity and doesn't settle with rest, especially if you've recently increased your training load, please see a doctor promptly for imaging. Don't push through this one.`,
+  'Femoral Neck Stress Fracture': `A stress fracture in the hip area is a small crack in the bone, usually from repetitive loading rather than a single trauma. In the femoral neck (the top of the thigh bone just below the hip joint), this is a serious injury that needs urgent medical attention — if missed, it can progress to a complete fracture. If you're a runner with groin pain that gets worse with activity and doesn't settle with rest, especially if you've recently increased your training load, please see a doctor promptly for imaging. Don't push through this one.`,
 
   'SI Joint Dysfunction': `Your sacroiliac joints connect your spine to your pelvis at the base of your back, one on each side. When these joints become stiff or move unevenly, they cause a deep, achy pain in the lower back, buttock, or the back of the thigh — usually on one side. It often flares with prolonged sitting, standing on one leg, or getting in and out of the car. It's very common and very treatable. Physiotherapy focusing on hip and core strengthening, along with hands-on treatment to restore normal joint movement, works well.`,
 
@@ -1907,7 +1907,7 @@ const DDX_LOGIC = {
   ],
   pelvis: [
     {
-      name: 'Hip Osteoarthritis (Hip Arthritis)',
+      name: 'Hip Osteoarthritis',
       ageNote: '>45 years; more common in women; prevalence increases with age',
       match:(s,a,al,obj,tests,age,sex) => {
         let score=0;
@@ -2165,7 +2165,7 @@ const DDX_LOGIC = {
       ]
     },
     {
-      name: 'Hip Adductor Strain',
+      name: 'Hip Adductor Tendinopathy / Strain',
       ageNote: 'Athletes; acute injury or overuse from kicking, cutting, and lateral movements',
       match:(s,a,al,obj,tests,age,sex) => {
         let score=0;
@@ -2335,7 +2335,7 @@ const DDX_LOGIC = {
       ]
     },
     {
-      name: 'Athletic Pubalgia (Sports Hernia / Groin Strain)',
+      name: 'Athletic Pubalgia (Sports Hernia)',
       ageNote: 'Young male athletes; sports requiring kicking, cutting, and sprinting',
       match:(s,a,al,obj,tests,age,sex) => {
         let score=0;
@@ -2369,7 +2369,7 @@ const DDX_LOGIC = {
       ]
     },
     {
-      name: '⚠️ Stress Fracture (Femoral Neck / Pubic Ramus) — RED FLAG',
+      name: 'Femoral Neck Stress Fracture',
       ageNote: 'Military recruits, endurance athletes 20–30 years; postmenopausal women',
       match:(s,a,al,obj,tests,age,sex) => {
         let score=0;
@@ -3575,7 +3575,7 @@ const DDX_LOGIC = {
       ]
     },
     {
-      name: 'Quadriceps Tendinopathy (Quad Tendon Pain / Above the Kneecap)',
+      name: 'Quadriceps Tendinopathy',
       ageNote: 'Less common than patellar tendinopathy; peak in strength athletes and jumpers 25–45 years; males more affected',
       match:(s,a,al,obj,tests,age,sex) => {
         let score=0;
@@ -3613,7 +3613,7 @@ const DDX_LOGIC = {
       ]
     },
     {
-      name: 'Distal Hamstring Tendinopathy (Hamstring Tendon Pain Behind the Knee)',
+      name: 'Distal Hamstring Tendinopathy',
       ageNote: 'Associated with cyclists, rowers, and endurance athletes; less common than proximal hamstring tendinopathy',
       match:(s,a,al,obj,tests,age,sex) => {
         let score=0;
@@ -3986,7 +3986,7 @@ const DDX_LOGIC = {
       ]
     },
     {
-      name: 'Chronic Ankle Instability (Weak Ankle / Repeated Sprains)',
+      name: 'Chronic Ankle Instability',
       ageNote: 'Any age; follows lateral ankle sprain; affects 30–40% of initial sprain patients',
       match:(s,a,al,obj,tests,age,sex) => {
         let score=0;
@@ -8435,8 +8435,8 @@ const CASE_LIBRARY = {
           { name: 'SLR / femoral nerve', result: 'Negative bilaterally.', valence: 'neg' },
         ]},
       ],
-      correctDx: 'Adductor Longus Strain (Acute-on-Chronic Groin Strain)',
-      correctDxAliases: ['adductor strain', 'adductor longus strain', 'groin strain', 'adductor tear', 'groin muscle strain'],
+      correctDx: 'Hip Adductor Tendinopathy / Strain',
+      correctDxAliases: ['hip adductor tendinopathy / strain', 'adductor strain', 'adductor longus strain', 'adductor longus tendinopathy', 'adductor tendinopathy', 'hip adductor strain', 'groin strain', 'adductor tear', 'groin muscle strain'],
       keyDifferentials: ['Hip flexor (iliopsoas) strain', 'Athletic pubalgia / sports hernia', 'Hip labral tear', 'Osteitis pubis'],
       keyFindings: [
         { icon: '✓', text: '<strong>Point tenderness at adductor longus origin + positive squeeze test</strong> — precise anatomical localisation with load-reproduction is the hallmark of adductor strain.' },
@@ -8445,8 +8445,8 @@ const CASE_LIBRARY = {
         { icon: '✗', text: '<strong>Negative FADIR test</strong> — no intra-articular hip pathology (labral tear / FAI) contributing.' },
       ],
       rubric: [
-        { criterion: 'Correct primary diagnosis (adductor strain)', key: 'finalDx', weight: 3 },
-        { criterion: 'Adductor strain in initial differential', key: 'ddx1-3', weight: 2 },
+        { criterion: 'Correct primary diagnosis (Hip Adductor Tendinopathy / Strain)', key: 'finalDx', weight: 3 },
+        { criterion: 'Hip Adductor Tendinopathy / Strain in initial differential', key: 'ddx1-3', weight: 2 },
         { criterion: 'Management includes graded adductor loading and sport-specific return', key: 'management', weight: 2 },
         { criterion: 'Red flag screening completed (hernia, urological)', key: 'redFlags', weight: 1 },
         { criterion: 'Reasoning differentiates adductor strain from sports hernia and hip labral tear', key: 'reasoning', weight: 2 },
@@ -8458,7 +8458,7 @@ const CASE_LIBRARY = {
         { name: 'Cross-body sit-up test', result: 'Negative — no pain at posterior inguinal wall. Athletic pubalgia (sports hernia) excluded as the primary diagnosis.', valence: 'neg' },
         { name: 'FADIR test', result: 'Negative — no groin pain reproduced with hip flexion, adduction and internal rotation. Intra-articular hip pathology excluded as primary structure.', valence: 'neg', isDistractor: true },
       ],
-      expertReasoningPrompt: `The correct diagnosis is an acute Adductor Longus Strain. The mechanism (eccentric kicking load), precise pain location at the adductor longus origin (3 cm distal to pubic tubercle), and bilateral positive adductor squeeze tests (with 45° position most provocative — adductor longus is most active in this position) confirm the diagnosis. The negative cross-body sit-up test eliminates athletic pubalgia/sports hernia where posterior inguinal wall weakness is the primary issue. Negative FADIR removes intra-articular hip pathology. Management: initial relative rest (pain-guided), progressive isometric to isotonic adductor loading (Copenhagen adductor, adductor squeeze progressions), then sport-specific kicking return over 4–8 weeks.`,
+      expertReasoningPrompt: `The correct diagnosis is Hip Adductor Tendinopathy / Strain (acute adductor longus-dominant presentation). The mechanism (eccentric kicking load), precise pain location at the adductor longus origin (3 cm distal to pubic tubercle), and bilateral positive adductor squeeze tests (with 45° position most provocative — adductor longus is most active in this position) confirm the diagnosis. The negative cross-body sit-up test eliminates athletic pubalgia/sports hernia where posterior inguinal wall weakness is the primary issue. Negative FADIR removes intra-articular hip pathology. Management: initial relative rest (pain-guided), progressive isometric to isotonic adductor loading (Copenhagen adductor, adductor squeeze progressions), then sport-specific kicking return over 4–8 weeks.`,
     },
 
     {
@@ -8572,7 +8572,7 @@ const CASE_LIBRARY = {
       ],
       correctDx: 'Gluteal Tendinopathy',
       correctDxAliases: ['gluteal tendinopathy', 'gluteus medius tendinopathy', 'gtps', 'greater trochanteric pain syndrome', 'trochanteric tendinopathy', 'glut tendinopathy'],
-      keyDifferentials: ['Hip OA', 'Trochanteric bursitis (isolated)', 'L4/5 lumbar referred pain', 'IT band syndrome (hip variant)'],
+      keyDifferentials: ['Hip Osteoarthritis', 'Trochanteric bursitis (isolated)', 'L4/5 lumbar referred pain', 'IT band syndrome (hip variant)'],
       keyFindings: [
         { icon: '✓', text: '<strong>Single-leg stance positive within 20 seconds</strong> — the most clinically informative test for gluteal tendinopathy; compressive load on tendon reproduces pain.' },
         { icon: '✓', text: '<strong>Compressive load pattern</strong> — pain with leg crossing, lying on side, and FADER are all compressive loading positions for the gluteal tendons.' },
@@ -8637,8 +8637,8 @@ const CASE_LIBRARY = {
           { name: 'Seated forward lean (simulate cycling position)', result: 'Ischial pain reproduced and worsened with forward lean in seated position.', valence: 'pos' },
         ]},
       ],
-      correctDx: 'Proximal Hamstring Tendinopathy',
-      correctDxAliases: ['proximal hamstring tendinopathy', 'hamstring tendinopathy', 'high hamstring tendinopathy', 'proximal hamstring', 'ischial tendinopathy'],
+      correctDx: 'Proximal Hamstring Tendinopathy / Strain',
+      correctDxAliases: ['proximal hamstring tendinopathy / strain', 'proximal hamstring tendinopathy', 'hamstring tendinopathy', 'hamstring strain', 'high hamstring tendinopathy', 'proximal hamstring', 'ischial tendinopathy'],
       keyDifferentials: ['Lumbar radiculopathy (L5/S1)', 'Piriformis syndrome', 'SIJ dysfunction', 'Ischial bursitis'],
       keyFindings: [
         { icon: '✓', text: '<strong>Exquisite ischial tuberosity point tenderness</strong> — the most consistent finding in proximal hamstring tendinopathy; precisely localised to the proximal attachment.' },
@@ -8648,7 +8648,7 @@ const CASE_LIBRARY = {
         { icon: '✗', text: '<strong>Negative SIJ provocation cluster</strong> — rules out SIJ as the pain generator.' },
       ],
       rubric: [
-        { criterion: 'Correct primary diagnosis (proximal hamstring tendinopathy)', key: 'finalDx', weight: 3 },
+        { criterion: 'Correct primary diagnosis (Proximal Hamstring Tendinopathy / Strain)', key: 'finalDx', weight: 3 },
         { criterion: 'PHT in initial or updated differential', key: 'ddx1-3', weight: 2 },
         { criterion: 'Management includes compressive load avoidance + heavy slow resistance', key: 'management', weight: 2 },
         { criterion: 'Red flag screening completed', key: 'redFlags', weight: 1 },
@@ -8661,7 +8661,7 @@ const CASE_LIBRARY = {
         { name: 'FADIR test', result: 'Negative — no groin or anterior hip pain. Hip intra-articular pathology excluded.', valence: 'neg' },
         { name: 'FABER test', result: 'Negative — no groin or SI pain reproduced. Hip intra-articular pathology and SI joint dysfunction excluded.', valence: 'neg', isDistractor: true },
       ],
-      expertReasoningPrompt: `The correct diagnosis is proximal hamstring tendinopathy. The ischial tuberosity point tenderness plus combined positive bent knee stretch at 30° and 90° is the discriminating cluster. The cycling position (sustained hip flexion in sitting) is the primary compressive mechanism — this is a classic PHT pattern. Despite the L4/5 MRI finding, the negative SLR, Slump, and lumbar ROM, together with no symptoms below the knee, effectively exclude radiculopathy as the primary driver. The piriformis tenderness is a common co-finding but does not explain the IT point tenderness or load response. Management: eliminate compressive seated loads (padded seat, avoid prolonged sitting/forward lean), isometric hamstring loading, progressive heavy slow resistance protocol.`,
+      expertReasoningPrompt: `The correct diagnosis is Proximal Hamstring Tendinopathy / Strain. The ischial tuberosity point tenderness plus combined positive bent knee stretch at 30° and 90° is the discriminating cluster. The cycling position (sustained hip flexion in sitting) is the primary compressive mechanism — this is a classic proximal hamstring tendon overload pattern. Despite the L4/5 MRI finding, the negative SLR, Slump, and lumbar ROM, together with no symptoms below the knee, effectively exclude radiculopathy as the primary driver. The piriformis tenderness is a common co-finding but does not explain the IT point tenderness or load response. Management: eliminate compressive seated loads (padded seat, avoid prolonged sitting/forward lean), isometric hamstring loading, progressive heavy slow resistance protocol.`,
     },
 
     {
@@ -9352,7 +9352,7 @@ const CASE_LIBRARY = {
       ],
       correctDx: 'Osteitis Pubis (Pubic Symphysis Overload)',
       correctDxAliases: ['osteitis pubis', 'pubic symphysis overload', 'athletic pubalgia', 'groin overload', 'pubic symphysis dysfunction'],
-      keyDifferentials: ['Adductor Longus Tendinopathy', 'Inguinal Hernia / Sports Hernia', 'Hip Flexor Strain', 'Femoroacetabular Impingement'],
+      keyDifferentials: ['Hip Adductor Tendinopathy / Strain', 'Inguinal Hernia / Sports Hernia', 'Hip Flexor Strain', 'Femoroacetabular Impingement'],
       keyFindings: [
         { icon: '✓', text: '<strong>Bilateral presentation with pubic symphysis tenderness</strong> — bilateral groin pain with direct pubic tenderness is the hallmark of osteitis pubis, distinguishing it from unilateral adductor strains.' },
         { icon: '✓', text: '<strong>Positive squeeze test at 0° and 45°</strong> — the squeeze test is the most sensitive clinical test for groin overload pathology; bilateral positivity implicates the pubic symphysis specifically.' },
@@ -9491,7 +9491,7 @@ function generateCaseLibraryPack3() {
     Hip: {
       beginner: { name: 'Hip Flexor Strain', aliases: ['hip flexor strain', 'iliopsoas strain', 'hip flexor overload', 'psoas strain', 'iliopsoas'] },
       intermediate: { name: 'Greater Trochanteric Pain Syndrome', aliases: ['gtps', 'greater trochanteric', 'gluteal tendinopathy', 'trochanteric bursitis'] },
-      advanced: { name: 'Femoral Neck Stress Fracture Suspected (urgent imaging)', aliases: ['stress fracture', 'femoral neck stress fracture', 'bone stress injury'] }
+      advanced: { name: 'Femoral Neck Stress Fracture', aliases: ['stress fracture', 'femoral neck stress fracture', 'bone stress injury'] }
     },
     Knee: {
       beginner: { name: 'Patellofemoral Pain Syndrome', aliases: ['patellofemoral', 'pfps', 'anterior knee pain', 'runner\'s knee'] },
@@ -11798,6 +11798,9 @@ const CS_DDX_CANONICAL_MAP = {
   'full thickness rotator cuff tear suspected urgent referral': 'Full Thickness Rotator Cuff Tear Suspected (urgent imaging)',
   'full thickness rotator cuff tear suspected urgent imaging': 'Full Thickness Rotator Cuff Tear Suspected (urgent imaging)',
   'rotator cuff full tear suspected urgent imaging': 'Full Thickness Rotator Cuff Tear Suspected (urgent imaging)',
+  'femoral neck stress fracture suspected': 'Femoral Neck Stress Fracture',
+  'femoral neck stress fracture suspected urgent imaging': 'Femoral Neck Stress Fracture',
+  'stress fracture femoral neck pubic ramus red flag': 'Femoral Neck Stress Fracture',
   'slap lesion': 'Labral Tear (SLAP)',
   'slap tear': 'Labral Tear (SLAP)',
   'labral tear slap': 'Labral Tear (SLAP)',
@@ -11861,21 +11864,39 @@ const CS_DDX_CANONICAL_MAP = {
   'lumbar radiculopathy l5 s1': 'Lumbar Radiculopathy',
   'lumbar spinal stenosis': 'Lumbar Spinal Stenosis (Spinal Narrowing)',
   'isolated lumbar spinal stenosis neurogenic claudication': 'Lumbar Spinal Stenosis (Spinal Narrowing)',
-  'hip osteoarthritis': 'Hip Osteoarthritis (Hip Arthritis)',
+  'hip osteoarthritis': 'Hip Osteoarthritis',
+  'hip osteoarthritis hip arthritis': 'Hip Osteoarthritis',
+  'hip arthritis': 'Hip Osteoarthritis',
+  'hip oa': 'Hip Osteoarthritis',
   'femoroacetabular impingement': 'Femoroacetabular Impingement (Hip Impingement)',
   'hip flexor overload': 'Hip Flexor Strain',
   'hip flexor overload iliopsoas': 'Hip Flexor Strain',
   'iliopsoas overload': 'Hip Flexor Strain',
   'hip flexor iliopsoas strain': 'Hip Flexor Strain',
-  'adductor longus strain': 'Hip Adductor Strain',
-  'adductor longus strain acute on chronic groin strain': 'Hip Adductor Strain',
-  'proximal hamstring tendinopathy': 'Proximal Hamstring Tendinopathy',
-  'proximal hamstring tendinopathy hamstring tendon pain sit bone pain': 'Proximal Hamstring Tendinopathy',
+  'adductor longus strain': 'Hip Adductor Tendinopathy / Strain',
+  'adductor longus strain acute on chronic groin strain': 'Hip Adductor Tendinopathy / Strain',
+  'adductor longus tendinopathy': 'Hip Adductor Tendinopathy / Strain',
+  'adductor strain': 'Hip Adductor Tendinopathy / Strain',
+  'adductor tendinopathy': 'Hip Adductor Tendinopathy / Strain',
+  'hip adductor strain': 'Hip Adductor Tendinopathy / Strain',
+  'hip adductor tendinopathy strain': 'Hip Adductor Tendinopathy / Strain',
+  'hamstring strain': 'Proximal Hamstring Tendinopathy / Strain',
+  'hamstring tear strain': 'Proximal Hamstring Tendinopathy / Strain',
+  'proximal hamstring tendinopathy': 'Proximal Hamstring Tendinopathy / Strain',
+  'proximal hamstring tendinopathy hamstring tendon pain sit bone pain': 'Proximal Hamstring Tendinopathy / Strain',
+  'hamstring tendinopathy': 'Proximal Hamstring Tendinopathy / Strain',
+  'high hamstring tendinopathy': 'Proximal Hamstring Tendinopathy / Strain',
+  'proximal hamstring': 'Proximal Hamstring Tendinopathy / Strain',
+  'ischial tendinopathy': 'Proximal Hamstring Tendinopathy / Strain',
+  'quadriceps tendinopathy quad tendon pain above the kneecap': 'Quadriceps Tendinopathy',
+  'distal hamstring tendinopathy hamstring tendon pain behind the knee': 'Distal Hamstring Tendinopathy',
   'greater trochanteric pain syndrome': 'Greater Trochanteric Pain Syndrome',
   'greater trochanteric pain syndrome gtps lateral hip pain': 'Greater Trochanteric Pain Syndrome',
   'gtps': 'Greater Trochanteric Pain Syndrome',
   'gluteal tendinopathy': 'Gluteal Tendinopathy (Hip Bursitis / Outer Hip Pain)',
-  'athletic pubalgia sports hernia': 'Athletic Pubalgia (Sports Hernia / Groin Strain)',
+  'athletic pubalgia sports hernia': 'Athletic Pubalgia (Sports Hernia)',
+  'athletic pubalgia sports hernia groin strain': 'Athletic Pubalgia (Sports Hernia)',
+  'athletic pubalgia sports hernia core muscle injury': 'Athletic Pubalgia (Sports Hernia)',
   'osteitis pubis pubic symphysis overload': 'Osteitis Pubis',
   'sij dysfunction': 'Sacroiliac Joint Dysfunction (SIJ Pain)',
   'sij dysfunction pelvic': 'Sacroiliac Joint Dysfunction (SIJ Pain)',
@@ -11933,6 +11954,8 @@ const CS_DDX_CANONICAL_MAP = {
   'lateral ankle sprain atfl': 'Lateral Ankle Sprain (ATFL/CFL)',
   'lateral ankle sprain atfl cfl': 'Lateral Ankle Sprain (ATFL/CFL)',
   'lateral ankle ligament sprain': 'Lateral Ankle Sprain (ATFL/CFL)',
+  'chronic ankle instability weak ankle repeated sprains': 'Chronic Ankle Instability',
+  'chronic ankle instability cai': 'Chronic Ankle Instability',
   'high ankle sprain syndesmotic': 'High Ankle Sprain (Syndesmosis)',
   'high ankle sprain syndesmosis': 'High Ankle Sprain (Syndesmosis)',
   'syndesmosis sprain high ankle sprain': 'High Ankle Sprain (Syndesmosis)',
