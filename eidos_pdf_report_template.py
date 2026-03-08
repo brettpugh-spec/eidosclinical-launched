@@ -62,6 +62,17 @@ SCORE_COLOURS: dict[str, colors.Color] = {
     "red":   RED_MISS,
 }
 
+# Reused paragraph styles (constant style definitions; no visual change)
+RUBRIC_CRITERION_STYLE = ParagraphStyle(
+    "rc", fontName="Helvetica", fontSize=7, textColor=TEXT_MAIN, leading=10
+)
+RUBRIC_RESPONSE_STYLE = ParagraphStyle(
+    "rr", fontName="Helvetica", fontSize=7, textColor=TEXT_MUTED, leading=10
+)
+EXPERT_BODY_STYLE = ParagraphStyle(
+    "eb", fontName="Helvetica", fontSize=8, textColor=TEXT_MAIN, leading=12.5, leftIndent=10
+)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DATA CONTRACT
@@ -437,14 +448,12 @@ def _render_page1(c: canvas.Canvas, d: ReportData, margin: float) -> None:
         rx = margin
         # Criterion
         c.saveState()
-        sty = ParagraphStyle("rc", fontName="Helvetica", fontSize=7, textColor=TEXT_MAIN, leading=10)
-        p = Paragraph(row["criterion"].replace("\n", "<br/>"), sty)
+        p = Paragraph(row["criterion"].replace("\n", "<br/>"), RUBRIC_CRITERION_STYLE)
         p.wrapOn(c, col_w[0] - 12, 9999)
         p.drawOn(c, rx + 6, y - row_h + (row_h - p.height) / 2)
         rx += col_w[0]
         # Response
-        sty2 = ParagraphStyle("rr", fontName="Helvetica", fontSize=7, textColor=TEXT_MUTED, leading=10)
-        p2 = Paragraph(row["response"], sty2)
+        p2 = Paragraph(row["response"], RUBRIC_RESPONSE_STYLE)
         p2.wrapOn(c, col_w[1] - 12, 9999)
         p2.drawOn(c, rx + 6, y - row_h + (row_h - p2.height) / 2)
         rx += col_w[1]
@@ -530,11 +539,7 @@ def _render_page2(c: canvas.Canvas, d: ReportData, margin: float) -> None:
         y -= badge_r * 2 + 4
 
         # Body paragraph
-        sty = ParagraphStyle(
-            "eb", fontName="Helvetica", fontSize=8, textColor=TEXT_MAIN,
-            leading=12.5, leftIndent=10,
-        )
-        p = Paragraph(sec["body"], sty)
+        p = Paragraph(sec["body"], EXPERT_BODY_STYLE)
         p.wrapOn(c, cw - 10, 9999)
         p.drawOn(c, margin + 10, y - p.height)
         y -= p.height + 14
@@ -615,7 +620,7 @@ def generate_report(data: ReportData, output_path: str | None = None) -> bytes:
                             headers={"Content-Disposition": f"attachment; filename=eidos-case-{id}.pdf"})
     """
     buf = io.BytesIO()
-    c = canvas.Canvas(buf, pagesize=A4)
+    c = canvas.Canvas(buf, pagesize=A4, pageCompression=1)
     c.setTitle(f"EIDOS — {data.get('case_title', 'Case Report')}")
 
     margin = 18 * mm
