@@ -1,4 +1,4 @@
-window.__EIDOS_BUILD = 'kit-uid-4625fa2552-r11';
+window.__EIDOS_BUILD = 'kit-uid-4625fa2552-r16';
 window.__EIDOS_FILE = '/Users/brettpugh/Desktop/eidos/index.html';
 
 // ══════════════════════════════════════════
@@ -8322,7 +8322,7 @@ function csDeriveInfoFromVignette(vignette, fallbackInfo) {
   const defaults = {
     age: 'Not stated',
     sex: 'Not stated',
-    occupation: 'Not specified',
+    occupation: 'Not given',
     onset: 'Not stated',
     duration: 'Not stated'
   };
@@ -8359,26 +8359,55 @@ function csDeriveInfoFromVignette(vignette, fallbackInfo) {
   if (sexMatch) {
     const sx = sexMatch[1].toLowerCase();
     out.sex = (sx === 'female' || sx === 'woman') ? 'Female' : 'Male';
+  } else {
+    const malePronouns = (introText.match(/\b(he|his|him)\b/gi) || []).length;
+    const femalePronouns = (introText.match(/\b(she|her|hers)\b/gi) || []).length;
+    if (malePronouns > femalePronouns && malePronouns > 0) out.sex = 'Male';
+    else if (femalePronouns > malePronouns && femalePronouns > 0) out.sex = 'Female';
   }
 
   const timespan = '(?:\\d+(?:\\s*[-–]\\s*\\d+)?\\s*[- ]?\\s*(?:hour|hours|day|days|week|weeks|month|months|year|years))';
   const onsetMatchers = [
-    new RegExp(`\\b(${timespan})\\s*(?:'s)?\\s+(?:duration|history)\\b`, 'i'),
-    new RegExp(`\\bof\\s+(?:approximately|about|around|roughly)?\\s*(${timespan})\\b`, 'i'),
-    new RegExp(`\\b(?:for|over|past|last)\\s+(?:the\\s+)?(?:past\\s+|last\\s+)?(?:approximately|about|around|roughly)?\\s*(${timespan})\\b`, 'i'),
-    new RegExp(`\\b(?:started|began|commenced|came on)\\b[^.?!]{0,100}?\\b(${timespan}\\s+ago)\\b`, 'i'),
-    new RegExp(`\\b(${timespan}\\s+ago)\\b`, 'i')
+    { pattern: new RegExp(`\\b(${timespan})\\s*(?:'s)?\\s+(?:duration|history)\\b`, 'i') },
+    { pattern: new RegExp(`\\b(${timespan})\\s+(?:[a-z]+\\s+){0,2}(?:duration|history)\\b`, 'i') },
+    { pattern: new RegExp(`\\b(?:with|for|over)\\s+(${timespan})\\s+of\\b`, 'i') },
+    { pattern: new RegExp(`\\bof\\s+(?:approximately|about|around|roughly)?\\s*(${timespan})\\b`, 'i') },
+    { pattern: new RegExp(`\\b(?:started|began|commenced|came on|onset was)\\b[^.?!]{0,100}?\\b(${timespan}\\s+ago)\\b`, 'i') },
+    { pattern: new RegExp(`\\b(${timespan}\\s+ago)\\b`, 'i') },
+    { pattern: new RegExp(`\\b(?:for|over|past|last)\\s+(?:the\\s+)?(?:past\\s+|last\\s+)?(?:approximately|about|around|roughly)?\\s*(${timespan})\\b`, 'i'), scheduleSensitive: true }
   ];
+  const isScheduleTimespanContext = (source, fullMatch, captured, idx) => {
+    const start = Math.max(0, Number(idx) || 0);
+    const matchText = String(fullMatch || '');
+    const before = source.slice(Math.max(0, start - 56), start).toLowerCase();
+    const after = source.slice(start + matchText.length, start + matchText.length + 56).toLowerCase();
+    const around = `${before} ${matchText.toLowerCase()} ${after}`;
+    if (/\b(?:daily|each day|a day|per day|\/day|per week|weekly|hours?\s+daily|hours?\s+per\s+week|sessions?\s+per\s+week)\b/.test(around)) return true;
+    if (/\bhours?\b/i.test(String(captured || '')) && /\b(?:works?|working|shift|operating|training|study|desk|clinic|sessions?)\b/.test(around)) return true;
+    return false;
+  };
   let onset = '';
-  [introText, plain].some(source => onsetMatchers.some(pattern => {
-    const match = source.match(pattern);
-    if (!match || !match[1]) return false;
-    onset = match[1];
-    return true;
-  }));
+  for (const source of [introText, plain]) {
+    for (const matcher of onsetMatchers) {
+      const match = matcher.pattern.exec(source);
+      if (!match || !match[1]) continue;
+      const scheduleCtx = isScheduleTimespanContext(source, match[0], match[1], match.index);
+      if (scheduleCtx && (matcher.scheduleSensitive || /\bhours?\b/i.test(match[1]))) continue;
+      onset = match[1];
+      break;
+    }
+    if (onset) break;
+  }
   if (onset) {
-    out.onset = onset.replace(/[-–]/g, ' ').replace(/\s+/g, ' ').trim();
+    out.onset = onset
+      .replace(/[–—]/g, '-')
+      .replace(/\s*-\s*/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim();
     out.duration = csInfoDurationFromOnset(out.onset, out.duration);
+  } else if (/\b(?:immediate|sudden(?:\s+onset)?|acute(?:\s+injury)?|heard\s+(?:and\s+felt\s+)?(?:a\s+)?loud\s+pop)\b/i.test(introText)) {
+    out.onset = 'Acute onset';
+    out.duration = 'Acute';
   } else if (!hasValue(out.duration)) {
     if (/\bsubacute\b/i.test(plain)) out.duration = 'Subacute';
     else if (/\bchronic\b/i.test(plain)) out.duration = 'Chronic';
@@ -8396,6 +8425,9 @@ function csDeriveInfoFromVignette(vignette, fallbackInfo) {
     if (!occupation) return '';
     if (occupation.length < 3 || occupation.length > 90) return '';
     if (/^\d/.test(occupation)) return '';
+    if (/^(?:male|female|man|woman|patient|person)$/i.test(occupation)) return '';
+    occupation = occupation.replace(/^(?:male|female|man|woman)\b[\s,/:-]*/i, '').trim();
+    if (!occupation || /^(?:patient|person)$/i.test(occupation)) return '';
     if (/\b(?:pain|history|duration|onset|symptom|weeks?|months?|years?|days?|hours?)\b/i.test(occupation)) return '';
     return occupation.charAt(0).toUpperCase() + occupation.slice(1);
   };
@@ -8458,10 +8490,15 @@ function csRenderVignette() {
   if (!c.info || typeof c.info !== 'object') c.info = {};
   const rawVignette = String(c.vignette || '').trim();
   const derivedInfo = csDeriveInfoFromVignette(rawVignette, c.info || {});
+  const resolvedSex = (derivedInfo && derivedInfo.sex) || 'Not stated';
+  let resolvedOccupation = (derivedInfo && derivedInfo.occupation) || 'Not given';
+  if (/^(?:male|female|man|woman|patient|person)$/i.test(String(resolvedOccupation || '').trim())) {
+    resolvedOccupation = 'Not given';
+  }
   c.info = {
     age: (derivedInfo && derivedInfo.age) || 'Not stated',
-    sex: (derivedInfo && derivedInfo.sex) || 'Not stated',
-    occupation: (derivedInfo && derivedInfo.occupation) || 'Not specified',
+    sex: resolvedSex,
+    occupation: resolvedOccupation,
     onset: (derivedInfo && derivedInfo.onset) || 'Not stated',
     duration: (derivedInfo && derivedInfo.duration) || 'Not stated'
   };
@@ -8472,7 +8509,7 @@ function csRenderVignette() {
     const infoKeys = ['age', 'sex', 'occupation', 'onset', 'duration'];
     grid.innerHTML = infoKeys.map(k => {
       const label = k.charAt(0).toUpperCase() + k.slice(1);
-      const value = (c.info && c.info[k]) ? c.info[k] : (k === 'occupation' ? 'Not specified' : 'Not stated');
+      const value = (c.info && c.info[k]) ? c.info[k] : (k === 'occupation' ? 'Not given' : 'Not stated');
       return `<div class="cs-info-item"><span class="cs-info-label">${label}</span><span class="cs-info-value">${escapeHtml(csImperializeText(value))}</span></div>`;
     }).join('');
   }

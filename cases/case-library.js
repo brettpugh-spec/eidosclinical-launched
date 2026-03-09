@@ -2310,7 +2310,7 @@ function generateCaseLibraryPack3() {
     const defaults = {
       age: 'Not stated',
       sex: 'Not stated',
-      occupation: 'Not specified',
+      occupation: 'Not given',
       onset: 'Not stated',
       duration: 'Not stated'
     };
@@ -2342,26 +2342,55 @@ function generateCaseLibraryPack3() {
     if (sexMatch) {
       const sx = sexMatch[1].toLowerCase();
       out.sex = (sx === 'female' || sx === 'woman') ? 'Female' : 'Male';
+    } else {
+      const malePronouns = (introText.match(/\b(he|his|him)\b/gi) || []).length;
+      const femalePronouns = (introText.match(/\b(she|her|hers)\b/gi) || []).length;
+      if (malePronouns > femalePronouns && malePronouns > 0) out.sex = 'Male';
+      else if (femalePronouns > malePronouns && femalePronouns > 0) out.sex = 'Female';
     }
 
     const timespan = '(?:\\d+(?:\\s*[-–]\\s*\\d+)?\\s*[- ]?\\s*(?:hour|hours|day|days|week|weeks|month|months|year|years))';
     const onsetMatchers = [
-      new RegExp(`\\b(${timespan})\\s*(?:'s)?\\s+(?:duration|history)\\b`, 'i'),
-      new RegExp(`\\bof\\s+(?:approximately|about|around|roughly)?\\s*(${timespan})\\b`, 'i'),
-      new RegExp(`\\b(?:for|over|past|last)\\s+(?:the\\s+)?(?:past\\s+|last\\s+)?(?:approximately|about|around|roughly)?\\s*(${timespan})\\b`, 'i'),
-      new RegExp(`\\b(?:started|began|commenced|came on)\\b[^.?!]{0,100}?\\b(${timespan}\\s+ago)\\b`, 'i'),
-      new RegExp(`\\b(${timespan}\\s+ago)\\b`, 'i')
+      { pattern: new RegExp(`\\b(${timespan})\\s*(?:'s)?\\s+(?:duration|history)\\b`, 'i') },
+      { pattern: new RegExp(`\\b(${timespan})\\s+(?:[a-z]+\\s+){0,2}(?:duration|history)\\b`, 'i') },
+      { pattern: new RegExp(`\\b(?:with|for|over)\\s+(${timespan})\\s+of\\b`, 'i') },
+      { pattern: new RegExp(`\\bof\\s+(?:approximately|about|around|roughly)?\\s*(${timespan})\\b`, 'i') },
+      { pattern: new RegExp(`\\b(?:started|began|commenced|came on|onset was)\\b[^.?!]{0,100}?\\b(${timespan}\\s+ago)\\b`, 'i') },
+      { pattern: new RegExp(`\\b(${timespan}\\s+ago)\\b`, 'i') },
+      { pattern: new RegExp(`\\b(?:for|over|past|last)\\s+(?:the\\s+)?(?:past\\s+|last\\s+)?(?:approximately|about|around|roughly)?\\s*(${timespan})\\b`, 'i'), scheduleSensitive: true }
     ];
+    const isScheduleTimespanContext = (source, fullMatch, captured, idx) => {
+      const start = Math.max(0, Number(idx) || 0);
+      const matchText = String(fullMatch || '');
+      const before = source.slice(Math.max(0, start - 56), start).toLowerCase();
+      const after = source.slice(start + matchText.length, start + matchText.length + 56).toLowerCase();
+      const around = `${before} ${matchText.toLowerCase()} ${after}`;
+      if (/\b(?:daily|each day|a day|per day|\/day|per week|weekly|hours?\s+daily|hours?\s+per\s+week|sessions?\s+per\s+week)\b/.test(around)) return true;
+      if (/\bhours?\b/i.test(String(captured || '')) && /\b(?:works?|working|shift|operating|training|study|desk|clinic|sessions?)\b/.test(around)) return true;
+      return false;
+    };
     let onset = '';
-    [introText, plain].some(source => onsetMatchers.some(pattern => {
-      const match = source.match(pattern);
-      if (!match || !match[1]) return false;
-      onset = match[1];
-      return true;
-    }));
+    for (const source of [introText, plain]) {
+      for (const matcher of onsetMatchers) {
+        const match = matcher.pattern.exec(source);
+        if (!match || !match[1]) continue;
+        const scheduleCtx = isScheduleTimespanContext(source, match[0], match[1], match.index);
+        if (scheduleCtx && (matcher.scheduleSensitive || /\bhours?\b/i.test(match[1]))) continue;
+        onset = match[1];
+        break;
+      }
+      if (onset) break;
+    }
     if (onset) {
-      out.onset = onset.replace(/[-–]/g, ' ').replace(/\s+/g, ' ').trim();
+      out.onset = onset
+        .replace(/[–—]/g, '-')
+        .replace(/\s*-\s*/g, '-')
+        .replace(/\s+/g, ' ')
+        .trim();
       out.duration = _durationFromOnsetText(out.onset, out.duration);
+    } else if (/\b(?:immediate|sudden(?:\s+onset)?|acute(?:\s+injury)?|heard\s+(?:and\s+felt\s+)?(?:a\s+)?loud\s+pop)\b/i.test(introText)) {
+      out.onset = 'Acute onset';
+      out.duration = 'Acute';
     } else if (!hasValue(out.duration)) {
       if (/\bsubacute\b/i.test(plain)) out.duration = 'Subacute';
       else if (/\bchronic\b/i.test(plain)) out.duration = 'Chronic';
@@ -2424,6 +2453,18 @@ function generateCaseLibraryPack3() {
     return keys;
   }
 
+  function _orderedLevels(targetLevel) {
+    const normTarget = String(targetLevel || '').trim().toLowerCase();
+    if (!LEVELS.includes(normTarget)) return LEVELS.slice();
+    return [normTarget].concat(LEVELS.filter(lvl => lvl !== normTarget));
+  }
+
+  function _candidateSignature(candidate) {
+    const raw = _caseLibraryPlainText((candidate && candidate.vignette) || (candidate && candidate.title) || '');
+    const fallback = `${String(candidate && candidate.title || '')} ${String(candidate && candidate.dxName || '')}`;
+    return _dxKey(raw || fallback);
+  }
+
   function _regionMatches(caseRegion, targetRegion) {
     return String(caseRegion || '').includes(targetRegion);
   }
@@ -2439,25 +2480,27 @@ function generateCaseLibraryPack3() {
       dxAliases: _deepClone(bank.aliases || []),
       redFlags: _deepClone(redFlagList(profileLevel, region)),
       vignette,
+      sourceLevel: profileLevel,
       examCategories: _deepClone(makeExam(profileLevel, region)),
       additionalTests: _deepClone(makeAdditionalTests(profileLevel, region)),
       keyDifferentials: ['Alternative musculoskeletal pathology', 'Neural involvement', 'Referred pain source'],
       keyFindings: [{ icon: '✓', text: '<strong>Pattern recognition</strong> - symptoms and exam align with the intended presentation.' }],
       rubric: baseRubric(bank.name),
-      expertReasoningPrompt: `This is a ${profileLevel} ${region} template case designed to assess pattern recognition, differential reasoning, and appropriate management including red flag screening.`
+      expertReasoningPrompt: `This ${profileLevel} ${region} case emphasizes structured differential diagnosis, targeted test selection, red flag screening, and level-appropriate management planning.`
     };
   }
 
-  function _buildRegionCandidatePool(region, seedIndex) {
+  function _buildRegionCandidatePool(region, seedIndex, targetLevel) {
     const pool = [];
+    const orderedLevels = _orderedLevels(targetLevel);
 
-    // 1) Template candidates from all levels for broad diagnosis variety.
-    LEVELS.forEach((profileLevel, idx) => {
+    // 1) Template candidates, preferring target level ordering.
+    orderedLevels.forEach((profileLevel, idx) => {
       pool.push(_buildTemplateCandidate(region, profileLevel, (seedIndex + idx) % 3));
     });
 
-    // 2) Curated authored cases from any level for diagnosis-specific realism.
-    LEVELS.forEach(srcLevel => {
+    // 2) Curated authored cases, preferring target level ordering.
+    orderedLevels.forEach(srcLevel => {
       (CASE_LIBRARY[srcLevel] || []).forEach(src => {
         if (!src || GENERATED_CASE_ID_RE.test(String(src.id || ''))) return;
         if (!_regionMatches(src.region, region)) return;
@@ -2468,6 +2511,7 @@ function generateCaseLibraryPack3() {
           dxAliases: _deepClone(src.correctDxAliases || []),
           redFlags: _deepClone(src.redFlags || []),
           vignette: src.vignette,
+          sourceLevel: srcLevel,
           examCategories: _deepClone(src.examCategories || []),
           additionalTests: _deepClone(src.additionalTests || []),
           keyDifferentials: _deepClone(src.keyDifferentials || ['Alternative musculoskeletal pathology', 'Neural involvement', 'Referred pain source']),
@@ -2495,6 +2539,19 @@ function generateCaseLibraryPack3() {
     return (CASE_LIBRARY[level] || []).some(c => c && c.id === id);
   }
 
+  const usedRegionCandidateSignatures = {};
+  REGIONS.forEach(region => {
+    const signatures = new Set();
+    LEVELS.forEach(level => {
+      (CASE_LIBRARY[level] || []).forEach(c => {
+        if (!c || !_regionMatches(c.region, region)) return;
+        const signature = _candidateSignature(c);
+        if (signature) signatures.add(signature);
+      });
+    });
+    usedRegionCandidateSignatures[region] = signatures;
+  });
+
   LEVELS.forEach(level => {
     REGIONS.forEach(region => {
       for (let i = 0; i < 3; i++) {
@@ -2516,29 +2573,31 @@ function generateCaseLibraryPack3() {
           { icon: '✓', text: '<strong>Pattern recognition</strong> - symptoms and exam align with the intended presentation.' }
         ];
         let generatedRubric = baseRubric(bank.name);
-        let generatedExpertReasoning = `This is a ${level} ${region} template case designed to assess pattern recognition, differential reasoning, and appropriate management including red flag screening.`;
+        let generatedExpertReasoning = `This ${level} ${region} case emphasizes structured differential diagnosis, targeted test selection, red flag screening, and level-appropriate management planning.`;
 
-        // Global rule: keep diagnoses unique within each level+region bucket.
-        // Pull from a mixed pool (templates + curated region-matched cases) to maximize variety
-        // while keeping subjective/objective content diagnosis-consistent.
+        // Build generated cases from same-level candidates to keep progression consistent
+        // and avoid cross-level duplicate case narratives.
         if (!(level === 'beginner' && region === 'Knee')) {
-          const existingDxKeys = new Set();
-          (CASE_LIBRARY[level] || [])
-            .filter(c => c && _regionMatches(c.region, region))
-            .forEach(c => {
-              _dxKeySet(c.correctDx, c.correctDxAliases).forEach(key => existingDxKeys.add(key));
-            });
-          const candidates = _buildRegionCandidatePool(region, i);
+          const regionUsedSignatures = usedRegionCandidateSignatures[region] || new Set();
+          usedRegionCandidateSignatures[region] = regionUsedSignatures;
+
+          const candidates = _buildRegionCandidatePool(region, i, level);
           const rotated = candidates.slice(i).concat(candidates.slice(0, i));
-          const picked = rotated.find(p => {
-            const keys = _dxKeySet(p.dxName, p.dxAliases);
-            for (const key of keys) {
-              if (existingDxKeys.has(key)) return false;
-            }
+          const canUseCandidate = (p, rejectUsedSignature) => {
+            if (!p) return false;
+            if (String(p.sourceLevel || '').toLowerCase() !== String(level || '').toLowerCase()) return false;
+            if (!rejectUsedSignature) return true;
+            const signature = _candidateSignature(p);
+            if (signature && regionUsedSignatures.has(signature)) return false;
             return true;
-          });
+          };
+
+          let picked = rotated.find(p => canUseCandidate(p, true))
+            || rotated.find(p => canUseCandidate(p, false));
 
           if (!picked) continue;
+          const pickedSignature = _candidateSignature(picked);
+          if (pickedSignature) regionUsedSignatures.add(pickedSignature);
 
           bank = { name: picked.dxName, aliases: picked.dxAliases && picked.dxAliases.length ? picked.dxAliases : [picked.dxName] };
           generatedTitle = picked.title || generatedTitle;
@@ -2646,7 +2705,7 @@ function generateCaseLibraryPack3() {
             },
             {
               title: 'Medial proximal tibial pain in a new walking program',
-              info: { age: '54', sex: 'Female', occupation: 'Not specified', onset: '7 weeks', duration: 'Subacute' },
+              info: { age: '54', sex: 'Female', occupation: 'Not given', onset: '7 weeks', duration: 'Subacute' },
               dxName: 'Pes Anserine Bursitis',
               dxAliases: ['pes anserine bursitis', 'anserine bursitis', 'medial proximal tibial bursitis'],
               redFlags: ['Hot swollen knee with fever', 'Rapid unexplained weight loss', 'Night pain not eased by position', 'Acute trauma with inability to weight-bear'],
