@@ -7932,6 +7932,7 @@ const csState = {
 
 const CS_CHALLENGE_ROUTE_PARAM = 'challenge';
 const CS_SHARED_REPORT_ROUTE_PARAM = 'cs_report';
+const CS_SHARED_REPORT_MAX_URL_LENGTH = 1200;
 const CS_OWNER_LINKS_STORAGE_KEY = 'eidos_cs_owner_links_v1';
 const CS_CHALLENGE_SESSION_STORAGE_KEY = 'eidos_cs_challenge_state_v1';
 const CS_CHALLENGE_API_ENDPOINTS = ['/challenge', '/functions/challenge', '/api/challenge', '/.netlify/functions/challenge'];
@@ -8665,22 +8666,43 @@ function csBuildMinimalSharedReportPayload() {
     v: 1,
     case_id: String(c.id || '').trim(),
     level: String(csState.level || '').trim().toLowerCase(),
-    ddx1: csTrimSharedReportText(csState.ddx1, 120),
-    ddx2: csTrimSharedReportText(csState.ddx2, 120),
-    ddx3: csTrimSharedReportText(csState.ddx3, 120),
-    final_dx: csTrimSharedReportText(csState.finalDx, 120),
+    ddx1: csTrimSharedReportText(csState.ddx1, 64),
+    ddx2: csTrimSharedReportText(csState.ddx2, 64),
+    ddx3: csTrimSharedReportText(csState.ddx3, 64),
+    final_dx: csTrimSharedReportText(csState.finalDx, 80),
     confidence: csClampConfidence(csState.confidence),
-    red_flags: csBuildSharedReportArray(csState.redFlags || [], 10, 60),
-    revealed_tests: csBuildSharedReportArray((csState.revealed || []).map((r) => r && r.name), 16, 60),
+    red_flags: csBuildSharedReportArray(csState.redFlags || [], 4, 34),
+    revealed_tests: csBuildSharedReportArray((csState.revealed || []).map((r) => r && r.name), 8, 40),
     tokens_total: Number(csState.tokensTotal) || 8,
     tokens_used: Number(csState.tokensUsed) || 0
   };
 }
 
+function csBuildCaseOnlySharedReportPayload() {
+  const c = csState.case;
+  if (!c || !c.id) return null;
+  return {
+    v: 1,
+    case_id: String(c.id || '').trim(),
+    level: String(csState.level || '').trim().toLowerCase(),
+    final_dx: csTrimSharedReportText(csState.finalDx, 60),
+    confidence: csClampConfidence(csState.confidence)
+  };
+}
+
+function csBuildShareBaseUrl() {
+  try {
+    return `${window.location.origin}${window.location.pathname}`;
+  } catch (_) {
+    const href = String(window.location.href || '').trim();
+    return href.split('#')[0].split('?')[0] || href;
+  }
+}
+
 function csBuildSharedReportUrlFromEncoded(encoded) {
   if (!encoded) return '';
   try {
-    const url = new URL(window.location.href);
+    const url = new URL(csBuildShareBaseUrl());
     url.searchParams.set(CS_SHARED_REPORT_ROUTE_PARAM, encoded);
     return `${url.origin}${url.pathname}${url.search}`;
   } catch (_) {
@@ -8690,28 +8712,35 @@ function csBuildSharedReportUrlFromEncoded(encoded) {
 
 function csBuildSharedReportUrl() {
   const payloadProfiles = [
-    { shortTextMax: 180, longTextMax: 420, listCountMax: 40, listItemMax: 90 },
-    { shortTextMax: 140, longTextMax: 280, listCountMax: 24, listItemMax: 70 },
-    { shortTextMax: 100, longTextMax: 180, listCountMax: 16, listItemMax: 52 }
+    { shortTextMax: 96, longTextMax: 140, listCountMax: 10, listItemMax: 42 },
+    { shortTextMax: 72, longTextMax: 104, listCountMax: 8, listItemMax: 36 },
+    { shortTextMax: 56, longTextMax: 80, listCountMax: 6, listItemMax: 30 }
   ];
 
   for (const profile of payloadProfiles) {
     const payload = csBuildSharedReportPayload(profile);
     if (!payload) continue;
     const encoded = csBase64UrlEncodeUtf8(JSON.stringify(payload));
-    if (!encoded || encoded.length > 7000) continue;
+    if (!encoded) continue;
     const url = csBuildSharedReportUrlFromEncoded(encoded);
-    if (url) return url;
+    if (url && url.length <= CS_SHARED_REPORT_MAX_URL_LENGTH) return url;
   }
 
   const minimalPayload = csBuildMinimalSharedReportPayload();
   const encodedMinimal = minimalPayload ? csBase64UrlEncodeUtf8(JSON.stringify(minimalPayload)) : '';
-  if (encodedMinimal && encodedMinimal.length <= 7000) {
+  if (encodedMinimal) {
     const url = csBuildSharedReportUrlFromEncoded(encodedMinimal);
-    if (url) return url;
+    if (url && url.length <= CS_SHARED_REPORT_MAX_URL_LENGTH) return url;
   }
 
-  return window.location.href;
+  const caseOnlyPayload = csBuildCaseOnlySharedReportPayload();
+  const encodedCaseOnly = caseOnlyPayload ? csBase64UrlEncodeUtf8(JSON.stringify(caseOnlyPayload)) : '';
+  if (encodedCaseOnly) {
+    const url = csBuildSharedReportUrlFromEncoded(encodedCaseOnly);
+    if (url && url.length <= CS_SHARED_REPORT_MAX_URL_LENGTH) return url;
+  }
+
+  return csBuildShareBaseUrl();
 }
 
 function csReadSharedReportPayloadFromUrl() {
