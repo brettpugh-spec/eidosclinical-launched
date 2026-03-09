@@ -1,4 +1,4 @@
-window.__EIDOS_BUILD = 'kit-uid-4625fa2552-r4';
+window.__EIDOS_BUILD = 'kit-uid-4625fa2552-r5';
 window.__EIDOS_FILE = '/Users/brettpugh/Desktop/eidos/index.html';
 
 // ══════════════════════════════════════════
@@ -12414,7 +12414,9 @@ function csPrewarmDebriefPdfBlob() {
     try {
       if (!document.getElementById('pagCS6')?.classList.contains('active')) return;
       if (!csGetDebriefModel()) return;
-      await csGetOrBuildDebriefPdfBlob({ timeoutMs: 24000 });
+      // Warm the PDF engine only. Full PDF rendering is deferred to explicit user action
+      // to avoid blocking mobile UI interactions on the debrief action row.
+      await csEnsureHtml2PdfLib();
     } catch (_) {}
   };
   if (typeof window.requestIdleCallback === 'function') {
