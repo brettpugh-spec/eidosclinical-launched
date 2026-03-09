@@ -7924,6 +7924,9 @@ const csState = {
   attemptSummary: null,
   lastScoreResult: null,
   lastDebriefModel: null,
+  pdfBlobCache: null,
+  pdfBlobCacheKey: '',
+  pdfBlobInFlight: null,
   progressSavedForCase: false,
 };
 
@@ -8269,6 +8272,7 @@ function csStartFilteredCase() {
 }
 
 function csResetSessionData() {
+  csClearPdfBlobCache();
   csState.tokensUsed = 0;
   csState.revealed = [];
   csState.ddx1 = ''; csState.ddx2 = ''; csState.ddx3 = '';
@@ -11577,6 +11581,7 @@ function csRenderDebriefFromModel(c, model) {
 async function csGenerateDebrief() {
   csSaveFieldState();
   csGoTo('pagCS6');
+  csClearPdfBlobCache();
 
   const c = csState.case;
   if (!c) return;
@@ -11697,6 +11702,7 @@ Requirements:
 
   csState.lastDebriefModel = csBuildDebriefModel(c, scoreResult);
   csState.attemptSummary = csBuildAttemptSummary(true);
+  csPrewarmDebriefPdfBlob();
   csUpdateChallengeControls();
 }
 
@@ -12349,6 +12355,75 @@ function csGetReportFileName() {
   return `eidos-${raw || 'clinical-case-report'}.pdf`;
 }
 
+function csBuildPdfBlobCacheKey(model) {
+  if (!model || typeof model !== 'object') return '';
+  const caseKey = String(model.caseKey || csState.case?.id || csState.case?.title || '').trim();
+  const scoreKey = `${Number(model.totalScore) || 0}/${Number(model.maxScore) || 100}`;
+  const summaryKey = String(model.feedbackSummary || model.verdictSubtitle || '').trim();
+  const expertKey = String(csState.aiFeedbackHtml || '').trim();
+  return [caseKey, scoreKey, summaryKey, expertKey.length].join('|');
+}
+
+function csClearPdfBlobCache() {
+  csState.pdfBlobCache = null;
+  csState.pdfBlobCacheKey = '';
+  csState.pdfBlobInFlight = null;
+}
+
+function csHasCachedDebriefPdfBlob() {
+  const debriefModel = csGetDebriefModel();
+  if (!debriefModel) return false;
+  const cacheKey = csBuildPdfBlobCacheKey(debriefModel);
+  return !!(cacheKey && csState.pdfBlobCache && csState.pdfBlobCacheKey === cacheKey);
+}
+
+async function csGetOrBuildDebriefPdfBlob(options) {
+  const cfg = options || {};
+  const force = !!cfg.force;
+  const timeoutMs = Number.isFinite(Number(cfg.timeoutMs)) ? Number(cfg.timeoutMs) : 24000;
+  const debriefModel = csGetDebriefModel();
+  if (!debriefModel) throw new Error('pdf_payload_unavailable');
+  const cacheKey = csBuildPdfBlobCacheKey(debriefModel);
+
+  if (!force && cacheKey && csState.pdfBlobCache && csState.pdfBlobCacheKey === cacheKey) {
+    return csState.pdfBlobCache;
+  }
+  if (!force && csState.pdfBlobInFlight && csState.pdfBlobInFlight.key === cacheKey) {
+    return csState.pdfBlobInFlight.promise;
+  }
+
+  const promise = (async () => {
+    const blob = await csWithTimeout(csGenerateDebriefPdfBlob(), timeoutMs, 'pdf_blob_timeout');
+    if (!blob) throw new Error('pdf_blob_unavailable');
+    if (cacheKey) {
+      csState.pdfBlobCache = blob;
+      csState.pdfBlobCacheKey = cacheKey;
+    }
+    return blob;
+  })();
+  csState.pdfBlobInFlight = { key: cacheKey, promise };
+  return promise.finally(() => {
+    if (csState.pdfBlobInFlight && csState.pdfBlobInFlight.promise === promise) {
+      csState.pdfBlobInFlight = null;
+    }
+  });
+}
+
+function csPrewarmDebriefPdfBlob() {
+  const runner = async () => {
+    try {
+      if (!document.getElementById('pagCS6')?.classList.contains('active')) return;
+      if (!csGetDebriefModel()) return;
+      await csGetOrBuildDebriefPdfBlob({ timeoutMs: 24000 });
+    } catch (_) {}
+  };
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(() => { void runner(); }, { timeout: 1600 });
+  } else {
+    setTimeout(() => { void runner(); }, 220);
+  }
+}
+
 function csBuildDebriefExportNode() {
   csAssertPdfExportLock('build_export_node');
   const source = document.querySelector(csPdfExportSourceSelector());
@@ -12932,6 +13007,9 @@ window.__EIDOS_TRACE_PDF_EXPORT = function __EIDOS_TRACE_PDF_EXPORT() {
     hasLegacyWindowPrintInFunction: fnText.includes('window.print'),
     hasHtml2PdfInFunction: fnText.includes('csGenerateDebriefPdfBlob('),
     hasHtml2PdfInShareFunction: shareFnText.includes('csGenerateDebriefPdfBlob('),
+    hasCachedBlob: !!csState.pdfBlobCache,
+    cachedBlobKey: csState.pdfBlobCacheKey || '',
+    pdfBlobInFlight: !!(csState.pdfBlobInFlight && csState.pdfBlobInFlight.promise),
     hasPrintFallbackInFunction: fnText.includes('csOpenPrintDebriefFallback('),
     hasPrintFallbackInShareFunction: shareFnText.includes('csOpenPrintDebriefFallback('),
     usesSimpleTextFallbackInFunction: fnText.includes('csDownloadSimpleFallbackPdf('),
@@ -12947,6 +13025,35 @@ async function csShareReport() {
 
   const btn = document.getElementById('csShareBtn');
   const originalLabel = btn ? btn.textContent : 'Share report';
+  const canNativeShare = !!navigator.share;
+  const shareBase = {
+    title: 'EIDOS Clinical Case Report',
+    text: `Clinical Case Simulation report: ${c.title}`
+  };
+  const fileName = csGetReportFileName();
+  let blob = null;
+
+  const canUseNativeFileShare = (() => {
+    if (!canNativeShare || typeof File === 'undefined') return false;
+    if (typeof navigator.canShare !== 'function') return true;
+    try {
+      const probe = new File(['eidos'], 'eidos-share-check.txt', { type: 'text/plain' });
+      return !!navigator.canShare({ files: [probe] });
+    } catch (_) {
+      return false;
+    }
+  })();
+
+  const tryUrlShare = async () => {
+    if (!canNativeShare) return false;
+    await csWithTimeout(
+      navigator.share({ ...shareBase, url: window.location.href }),
+      15000,
+      'share_sheet_timeout'
+    );
+    return true;
+  };
+
   let uiWatchdog = null;
   if (btn) { btn.textContent = 'Preparing…'; btn.disabled = true; }
   if (btn) {
@@ -12959,25 +13066,29 @@ async function csShareReport() {
   }
 
   try {
-    const waitState = await csWaitForDebriefReady(7000);
-    if (waitState && waitState.timedOut) {
-      _showToast('Expert reasoning is still loading. Exporting current report.', 2200);
+    if (canNativeShare && !canUseNativeFileShare) {
+      try {
+        await tryUrlShare();
+        return;
+      } catch (shareErr) {
+        if (shareErr && shareErr.name === 'AbortError') {
+          _showToast('Share canceled.', 1600);
+          return;
+        }
+      }
     }
 
-    const debriefModel = csGetDebriefModel();
-    if (!debriefModel) throw new Error('pdf_payload_unavailable');
-    const blob = await csWithTimeout(csGenerateDebriefPdfBlob(), 24000, 'pdf_blob_timeout');
-    if (!blob) throw new Error('pdf_blob_unavailable');
+    if (!csHasCachedDebriefPdfBlob()) {
+      const waitState = await csWaitForDebriefReady(7000);
+      if (waitState && waitState.timedOut) {
+        _showToast('Expert reasoning is still loading. Exporting current report.', 2200);
+      }
+    }
 
-    const fileName = csGetReportFileName();
+    blob = await csGetOrBuildDebriefPdfBlob({ timeoutMs: 24000 });
+
     const canMakeFile = (typeof File !== 'undefined');
     const file = canMakeFile ? new File([blob], fileName, { type: 'application/pdf' }) : null;
-    const shareBase = {
-      title: 'EIDOS Clinical Case Report',
-      text: `Clinical Case Simulation report: ${c.title}`
-    };
-
-    const canNativeShare = !!navigator.share;
     const canShareFile = !!(canNativeShare && file && (!navigator.canShare || navigator.canShare({ files: [file] })));
 
     if (canShareFile) {
@@ -12985,13 +13096,24 @@ async function csShareReport() {
       return;
     }
 
-    csDownloadBlob(blob, fileName);
+    if (canNativeShare) {
+      try {
+        await tryUrlShare();
+        return;
+      } catch (shareErr) {
+        if (shareErr && shareErr.name === 'AbortError') {
+          _showToast('Share canceled.', 1600);
+          return;
+        }
+      }
+    }
 
     if (canNativeShare) {
-      await csWithTimeout(navigator.share({ ...shareBase, url: window.location.href }), 15000, 'share_sheet_timeout');
+      _showToast('Could not open share sheet. Use Save as PDF if needed.', 3000);
       return;
     }
 
+    csDownloadBlob(blob, fileName);
     _showToast('Report downloaded. Use your share menu to send it.', 3200);
   } catch (err) {
     if (err && err.name === 'AbortError') {
@@ -13009,15 +13131,23 @@ async function csShareReport() {
     } else {
       _showToast('Could not prepare report for sharing right now.', 2600);
     }
-    if (csTryUnlockedPdfFallback()) {
-      _showToast('Opened print dialog to save/share the current debrief PDF.', 2600);
-    } else if (csTryLockedPrintRescue(code)) {
-      _showToast('Opened browser print view to save the current debrief PDF.', 3000);
-    } else if (CS_PDF_EXPORT_LOCK.enabled && !csPdfExportOverrideEnabled()) {
-      _showToast('PDF export lock blocked fallback path. Retry once debrief is fully loaded.', 3000);
-    } else {
-      _showToast('Could not generate report PDF right now.', 2600);
+    if (canNativeShare) {
+      try {
+        await tryUrlShare();
+        return;
+      } catch (shareErr) {
+        if (shareErr && shareErr.name === 'AbortError') {
+          _showToast('Share canceled.', 1600);
+          return;
+        }
+      }
     }
+    if (!canNativeShare && blob) {
+      csDownloadBlob(blob, fileName);
+      _showToast('Report downloaded. Use your share menu to send it.', 3200);
+      return;
+    }
+    _showToast('Share is unavailable right now. Use Save as PDF.', 2800);
   } finally {
     if (uiWatchdog) clearTimeout(uiWatchdog);
     if (btn) { btn.textContent = originalLabel; btn.disabled = false; }
@@ -13043,15 +13173,14 @@ async function csExportPDF() {
   }
 
   try {
-    const waitState = await csWaitForDebriefReady(7000);
-    if (waitState && waitState.timedOut) {
-      _showToast('Expert reasoning is still loading. Exporting current report.', 2200);
+    if (!csHasCachedDebriefPdfBlob()) {
+      const waitState = await csWaitForDebriefReady(7000);
+      if (waitState && waitState.timedOut) {
+        _showToast('Expert reasoning is still loading. Exporting current report.', 2200);
+      }
     }
 
-    const debriefModel = csGetDebriefModel();
-    if (!debriefModel) throw new Error('pdf_payload_unavailable');
-    const blob = await csWithTimeout(csGenerateDebriefPdfBlob(), 24000, 'pdf_blob_timeout');
-    if (!blob) throw new Error('pdf_blob_unavailable');
+    const blob = await csGetOrBuildDebriefPdfBlob({ timeoutMs: 24000 });
 
     csDownloadBlob(blob, csGetReportFileName());
     _showToast('PDF downloaded.', 1800);
