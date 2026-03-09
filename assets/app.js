@@ -7924,6 +7924,7 @@ const csState = {
   attemptSummary: null,
   lastScoreResult: null,
   lastDebriefModel: null,
+  progressSavedForCase: false,
 };
 
 const CS_CHALLENGE_ROUTE_PARAM = 'challenge';
@@ -7983,6 +7984,95 @@ const CASE_LIBRARY = (window.EIDOS_CASES && window.EIDOS_CASES.CASE_LIBRARY) || 
 };
 
 const CS_SEEN_CASES_STORAGE_KEY = 'eidos_cs_seen_cases_by_filter_v1';
+const CS_PROGRESS_STORAGE_KEY = 'eidos_progress';
+const CS_PROGRESS_DEFAULT = Object.freeze({ lastCase: 0, completedCases: [], lastUpdated: '' });
+
+function loadProgress() {
+  const fallback = { ...CS_PROGRESS_DEFAULT };
+  try {
+    const raw = localStorage.getItem(CS_PROGRESS_STORAGE_KEY);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return fallback;
+    const lastCase = Math.max(0, Math.floor(Number(parsed.lastCase) || 0));
+    const completedCases = Array.isArray(parsed.completedCases)
+      ? Array.from(new Set(
+          parsed.completedCases
+            .map((v) => Math.max(0, Math.floor(Number(v) || 0)))
+            .filter((v) => Number.isFinite(v))
+        )).sort((a, b) => a - b)
+      : [];
+    const lastUpdated = typeof parsed.lastUpdated === 'string' ? parsed.lastUpdated : '';
+    return { lastCase, completedCases, lastUpdated };
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function saveProgress(caseNumber) {
+  const nextCase = Math.max(0, Math.floor(Number(caseNumber) || 0));
+  try {
+    const current = loadProgress();
+    const lastCase = Math.max(Number(current.lastCase) || 0, nextCase);
+    const completed = new Set(
+      (current.completedCases || [])
+        .map((v) => Math.max(0, Math.floor(Number(v) || 0)))
+        .filter((v) => Number.isFinite(v) && v > 0)
+    );
+    if (nextCase > 0) completed.add(nextCase);
+    const payload = {
+      lastCase,
+      completedCases: Array.from(completed).sort((a, b) => a - b),
+      lastUpdated: new Date().toISOString(),
+    };
+    localStorage.setItem(CS_PROGRESS_STORAGE_KEY, JSON.stringify(payload));
+  } catch (_) {}
+}
+
+function clearProgress() {
+  try {
+    localStorage.removeItem(CS_PROGRESS_STORAGE_KEY);
+  } catch (_) {}
+  const reset = { ...CS_PROGRESS_DEFAULT };
+  csState.caseIndex = reset.lastCase;
+  csState.progressSavedForCase = false;
+  const progressEl = document.getElementById('csPoolProgress');
+  if (progressEl) progressEl.textContent = '0 completed';
+}
+
+function ensureResetProgressButton() {
+  let btn = document.getElementById('reset-progress');
+  if (btn) return btn;
+  const anchor = document.getElementById('csStartRandomBtn');
+  if (!anchor || !anchor.parentElement) return null;
+  btn = document.createElement('button');
+  btn.id = 'reset-progress';
+  btn.type = 'button';
+  btn.className = 'btn btn-secondary';
+  btn.textContent = 'Reset Progress';
+  anchor.parentElement.appendChild(btn);
+  return btn;
+}
+
+function initResetProgressHandler() {
+  const btn = ensureResetProgressButton();
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const ok = window.confirm('Reset all case progress? This cannot be undone.');
+    if (!ok) return;
+    clearProgress();
+    window.location.reload();
+  });
+}
+
+function restoreProgressOnLoad() {
+  const progress = loadProgress();
+  csState.caseIndex = Math.max(0, Math.floor(Number(progress.lastCase) || 0));
+  const progressEl = document.getElementById('csPoolProgress');
+  if (progressEl && !String(progressEl.textContent || '').trim()) {
+    progressEl.textContent = `${csState.caseIndex} completed`;
+  }
+}
 
 function csSetFilter(type, val, btnEl) {
   if (type === 'region') {
@@ -8111,6 +8201,12 @@ function csRefreshCasePoolStatus() {
     return;
   }
 
+  const completedCount = Math.max(0, Math.floor(Number(progress.completed) || 0));
+  if (completedCount > Math.max(0, Math.floor(Number(csState.caseIndex) || 0))) {
+    csState.caseIndex = completedCount;
+    saveProgress(csState.caseIndex);
+  }
+
   if (progressEl) {
     progressEl.textContent = `${progress.completed} of ${total} completed`;
   }
@@ -8194,6 +8290,7 @@ function csResetSessionData() {
   csState.attemptSummary = null;
   csState.lastScoreResult = null;
   csState.lastDebriefModel = null;
+  csState.progressSavedForCase = false;
   // Reset inputs
   ['csDdx1','csDdx2','csDdx3','csReasoning1','csUpdDdx1','csUpdDdx2','csUpdDdx3',
    'csReasoning2','csFinalDx','csFinalReasoning','csManagement','csImagingSuggestion'].forEach(id => {
@@ -11483,6 +11580,11 @@ async function csGenerateDebrief() {
 
   const c = csState.case;
   if (!c) return;
+  if (!csState.progressSavedForCase) {
+    csState.caseIndex = Math.max(0, Math.floor(Number(csState.caseIndex) || 0)) + 1;
+    saveProgress(csState.caseIndex);
+    csState.progressSavedForCase = true;
+  }
   csState.attemptSummary = csBuildAttemptSummary(false);
   const scoreResult = csComputeWeightedScore(c);
   if (!scoreResult) return;
@@ -11679,6 +11781,7 @@ function saveToStorage() {
       aiFeedbackHtml: trimmedAiFeedback,
       attemptSummary: csState.attemptSummary || null,
       lastScoreResult: csState.lastScoreResult || null,
+      progressSavedForCase: !!csState.progressSavedForCase,
     };
     // Store the active cs page so we can restore it
     const csPages = ['pagCS0','pagCS1','pagCS2','pagCS3','pagCS4','pagCS5','pagCS6'];
@@ -11757,6 +11860,7 @@ function loadFromStorage() {
       csState.attemptSummary  = cs.attemptSummary  || null;
       csState.lastScoreResult = cs.lastScoreResult || null;
       csState.lastDebriefModel = null;
+      csState.progressSavedForCase = !!cs.progressSavedForCase;
       csState.examRowOrder    = cs.examRowOrder    || {};
       csState.examRowOrderCaseKey = cs.examRowOrderCaseKey || '';
       csState.activeExamTab   = cs.activeExamTab   || null;
@@ -12033,6 +12137,8 @@ document.addEventListener('DOMContentLoaded', () => {
       setUIRoute('home');
     }
   }
+  restoreProgressOnLoad();
+  initResetProgressHandler();
   window.addEventListener('resize', () => requestAnimationFrame(syncHomeBackgroundHeight), { passive: true });
   syncHeaderPostCollect();
   populateDdxDatalist();
