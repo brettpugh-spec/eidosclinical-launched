@@ -755,8 +755,8 @@ const SPECIAL_TESTS = {
     {name:'Release Test (Surprise Test)',          purpose:'Anterior instability — most predictive; sudden release of relocation force reproduces apprehension'},
     {name:'Load and Shift Test',                  purpose:'GH laxity/instability — grading of anterior/posterior humeral head translation is associated with capsuloligamentous laxity; positive findings warrant interpretation in the context of symptom reproduction'},
     {name:'Sulcus Sign',                          purpose:'Multidirectional instability (MDI) — ≥2 cm inferior sulcus with distraction suggests MDI'},
-    // Adhesive capsulitis / GH OA
-    {name:'Global Passive ROM Assessment',        purpose:'Adhesive capsulitis / GH OA — global restriction of passive ROM, especially ER at side'},
+    // Adhesive capsulitis / Glenohumeral osteoarthritis
+    {name:'Global Passive ROM Assessment',        purpose:'Adhesive capsulitis / glenohumeral osteoarthritis — global restriction of passive ROM, especially ER at side'},
     // AC joint
     {name:'AC Joint Palpation / Tenderness',      purpose:'AC joint pathology — direct tenderness over the AC joint is a commonly used and clinically meaningful finding for AC joint involvement; interpret alongside cross-body adduction and functional findings'},
     {name:'Cross-Body Adduction Test',            purpose:'AC joint pathology — horizontal adduction reproduces superior/anterior shoulder pain'},
@@ -1046,7 +1046,7 @@ const PATIENT_EDU = {
 
   'Biceps Tendinopathy (Long Head)': `The long head of the biceps tendon runs from the muscle down through a groove at the front of the shoulder. When it becomes irritated from overuse or impingement, it causes a deep, aching pain at the front of the shoulder — often mistaken for general shoulder pain. It tends to be worse with lifting and reaching overhead. It usually coexists with rotator cuff problems and responds to the same type of treatment: progressive loading and addressing the underlying shoulder mechanics that are causing the tendon to be overloaded.`,
 
-  'AC Joint Osteoarthritis / Dysfunction': `The AC (acromioclavicular) joint is the small joint at the very top of your shoulder where your collarbone meets the bony arch of the shoulder blade. It can become painful from a direct injury (like a fall onto the shoulder), or gradually develop arthritis with age. You'll feel it as a localised pain right at the top of the shoulder, often worse when reaching across your body or lifting overhead. Most AC joint problems are managed conservatively — physiotherapy to offload the joint and address shoulder mechanics, with occasional injections in stubborn cases.`,
+  'AC Joint Pathology': `The AC (acromioclavicular) joint is the small joint at the top of your shoulder where your collarbone meets the bony arch of the shoulder blade. It can become painful after trauma (like a fall directly onto the shoulder causing a sprain/separation), or from gradual degenerative overload over time. You'll feel localised pain right at the top of the shoulder, usually worse with cross-body reaching or overhead loading. Most AC joint pathology is managed conservatively with load modification, targeted physiotherapy, and occasional injection support in persistent cases.`,
 
   'Glenohumeral Osteoarthritis': `Just like the hip and knee, the shoulder joint itself can develop osteoarthritis — where the cartilage lining the joint wears down over time. It's less common than hip or knee OA but causes similar symptoms: a deep, stiff ache in the shoulder that's worse with movement and better with rest, progressive loss of range of motion, and sometimes a grinding sensation. Exercise and physiotherapy are still the best first-line treatment and can significantly reduce pain and improve function, even with advanced OA.`,
 
@@ -1529,6 +1529,7 @@ const ONSET_PROFILE = {
   "Hip Osteoarthritis":                   'chronic',
   "Shoulder Osteoarthritis":              'chronic',
   "AC Joint Osteoarthritis":              'chronic',
+  "AC Joint Pathology":                   'variable',
   "Ankle Osteoarthritis":                 'chronic',
   "Glenohumeral Osteoarthritis":          'chronic',
   "Acromioclavicular (AC) Joint Arthritis":'chronic',
@@ -3109,8 +3110,8 @@ const DDX_LOGIC = {
       ]
     },
     {
-      name: 'AC Joint Osteoarthritis / Dysfunction',
-      ageNote: 'Middle-aged adults; most common AC joint disorder',
+      name: 'AC Joint Pathology',
+      ageNote: 'Any age; includes traumatic AC sprain/separation and degenerative AC joint overload',
       match:(s,a,al,obj,tests,age,sex) => {
         let score=0;
         if(s.has('Superior shoulder pain')||s.has('Pain at AC joint')) score+=5;
@@ -3133,7 +3134,7 @@ const DDX_LOGIC = {
         }
         return score;
       },
-      edu:'AC joint OA is the most common AC joint disorder and presents with anterior/superior shoulder pain localised to the AC joint, worsened by cross-body adduction and overhead activity. AC joint tenderness is a clinically meaningful and commonly used finding; the Paxinos test adds useful information when positive. Diagnostic local anaesthetic injection helps confirm the AC joint as the primary pain source. A positive Paxinos test combined with confirmatory imaging increases clinical confidence in the diagnosis. Conservative treatment includes activity modification and AC joint mobilisation; corticosteroid injection is effective for persistent symptoms.',
+      edu:'AC joint pathology presents with superior/anterior shoulder pain localised to the AC joint, commonly worsened by cross-body adduction and overhead activity. It includes both traumatic AC sprain/separation patterns and degenerative AC joint overload. AC joint tenderness is a clinically meaningful finding, and the Paxinos test can improve confidence when positive. Diagnostic local anaesthetic injection helps confirm the AC joint as the pain source in persistent cases. Conservative treatment includes activity modification, AC joint/scapular rehabilitation, and selective injection support when needed.',
       exercises:[
         {icon:'🔄', name:'Scapular Retraction & Postural Correction', sets:'3x15 reps + sustained posture', desc:'Reduces AC joint compressive loading from rounded shoulder posture.', focus:'Correct scapular dyskinesis to reduce rotator cuff impingement', diagram:'scapular_retraction'},
         {icon:'💪', name:'RC Strengthening (avoid cross-body)', sets:'3x15 reps each direction', desc:'Maintain rotator cuff strength — modify to avoid horizontal adduction provocation.', focus:'Strengthen RC while avoiding compressive AC joint loading positions', diagram:'sidelying_er'},
@@ -3164,15 +3165,15 @@ const DDX_LOGIC = {
         if(s.has('Apprehension')||s.has('Giving way / instability')) score=Math.max(0,score-3);
         // Neurological features suggest radiculopathy or TOS
         if(s.has('Paresthesias (C8/T1 distribution)')||s.has('Numbness')) score=Math.max(0,score-3);
-        // No crepitus or stiffness makes GH OA unlikely
+        // No crepitus or stiffness makes glenohumeral osteoarthritis unlikely
         if(!s.has('Stiffness')&&!s.has('Clicking / popping / catching')&&!s.has('Progressive loss of motion')) score=Math.max(0,score-3);
         return score;
       },
-      edu:'GH OA presents with progressive pain and stiffness over months to years, with global passive ROM restriction (greatest in external rotation) and possible crepitus. Prevalence increases substantially with age, particularly in older women. Radiographs show joint space narrowing, osteophytes, and posterior humeral head subluxation. There are no pathognomonic provocative tests — diagnosis is clinical combined with radiographic assessment. Conservative PT (mobility, RC strengthening, activity modification) is first-line; total shoulder arthroplasty is highly effective when conservative management fails.',
+      edu:'Glenohumeral osteoarthritis presents with progressive pain and stiffness over months to years, with global passive ROM restriction (greatest in external rotation) and possible crepitus. Prevalence increases substantially with age, particularly in older women. Radiographs show joint space narrowing, osteophytes, and posterior humeral head subluxation. There are no pathognomonic provocative tests — diagnosis is clinical combined with radiographic assessment. Conservative PT (mobility, RC strengthening, activity modification) is first-line; total shoulder arthroplasty is highly effective when conservative management fails.',
       exercises:[
         {icon:'🌀', name:'Pendulum & Active-Assisted ROM', sets:'2 min + 3x10 reps each direction', desc:'Maintain available ROM and prevent further capsular contracture.', focus:'Combine gravity-assisted distraction with guided range progression', diagram:'pendulum'},
         {icon:'💪', name:'RC Strengthening (pain-free range)', sets:'3x15 reps', desc:'Maintain dynamic joint stability and slow functional decline.', focus:'Maintain rotator cuff activation within non-provocative range', diagram:'sidelying_er'},
-        {icon:'🧘', name:'ER Stretching at Side (towel/wand)', sets:'Hold 30 sec x3', desc:'Priority stretch — ER is the most restricted motion in GH OA.', focus:'Prioritise external rotation — the most restricted plane in adhesive capsulitis', diagram:'wand_exercise'},
+        {icon:'🧘', name:'ER Stretching at Side (towel/wand)', sets:'Hold 30 sec x3', desc:'Priority stretch — ER is often the most restricted motion in glenohumeral osteoarthritis.', focus:'Prioritise external rotation — the most restricted plane in adhesive capsulitis', diagram:'wand_exercise'},
         {icon:'🚲', name:'Aquatic / Low-Load Functional Activities', sets:'20–30 min', desc:'Buoyancy reduces GH compressive load — ideal for pain-limited patients.', focus:'Restore functional movement patterns with reduced joint loading', diagram:'walking'}
       ]
     },
@@ -9186,6 +9187,20 @@ const CS_DDX_CANONICAL_MAP = {
   'femoral neck stress fracture suspected': 'Femoral Neck Stress Fracture',
   'femoral neck stress fracture suspected urgent imaging': 'Femoral Neck Stress Fracture',
   'stress fracture femoral neck pubic ramus red flag': 'Femoral Neck Stress Fracture',
+  'gh oa': 'Glenohumeral Osteoarthritis',
+  'glenohumeral oa': 'Glenohumeral Osteoarthritis',
+  'ac joint osteoarthritis': 'AC Joint Pathology',
+  'ac joint osteoarthritis dysfunction': 'AC Joint Pathology',
+  'ac joint dysfunction': 'AC Joint Pathology',
+  'ac joint pathology': 'AC Joint Pathology',
+  'ac joint sprain': 'AC Joint Pathology',
+  'ac joint separation': 'AC Joint Pathology',
+  'ac joint sprain separation': 'AC Joint Pathology',
+  'acromioclavicular ac joint arthritis': 'AC Joint Pathology',
+  'acromioclavicular ac joint sprain separation': 'AC Joint Pathology',
+  'acromioclavicular joint sprain': 'AC Joint Pathology',
+  'acromioclavicular joint separation': 'AC Joint Pathology',
+  'acromioclavicular joint sprain separation': 'AC Joint Pathology',
   'slap lesion': 'Labral Tear (SLAP)',
   'slap tear': 'Labral Tear (SLAP)',
   'labral tear slap': 'Labral Tear (SLAP)',
@@ -12064,6 +12079,54 @@ document.addEventListener('DOMContentLoaded', () => {
 // ======== PDF EXPORT ========
 
 let _csHtml2PdfLibPromise = null;
+const CS_PDF_EXPORT_LOCK = Object.freeze({
+  enabled: true,
+  // Temporary override requires explicit runtime opt-in:
+  // window.__EIDOS_ALLOW_PDF_EXPORT_OVERRIDE = true
+  overrideFlag: '__EIDOS_ALLOW_PDF_EXPORT_OVERRIDE',
+  requiredSourceSelector: '#pagCS6 .cs-page-inner',
+  allowFallbackWhenLocked: false
+});
+
+function csPdfExportOverrideEnabled() {
+  return !!window[CS_PDF_EXPORT_LOCK.overrideFlag];
+}
+
+function csCanUsePdfFallbackPath() {
+  if (!CS_PDF_EXPORT_LOCK.enabled) return true;
+  if (csPdfExportOverrideEnabled()) return true;
+  return !!CS_PDF_EXPORT_LOCK.allowFallbackWhenLocked;
+}
+
+function csPdfExportSourceSelector() {
+  return CS_PDF_EXPORT_LOCK.requiredSourceSelector;
+}
+
+function csAssertPdfExportLock(context = 'runtime') {
+  if (!CS_PDF_EXPORT_LOCK.enabled || csPdfExportOverrideEnabled()) return;
+
+  const fnText = String(window.csExportPDF || '');
+  const shareFnText = String(window.csShareReport || '');
+  const violations = [];
+
+  if (fnText.includes('/api/case/export-pdf')) violations.push('export_api_path');
+  if (shareFnText.includes('/api/case/export-pdf')) violations.push('share_api_path');
+  if (fnText.includes('csDownloadSimpleFallbackPdf(')) violations.push('export_text_pdf_fallback');
+  if (shareFnText.includes('csDownloadSimpleFallbackPdf(')) violations.push('share_text_pdf_fallback');
+  if (fnText.includes('csBuildSimplePdfBlobFromText(')) violations.push('export_simple_blob_builder');
+  if (shareFnText.includes('csBuildSimplePdfBlobFromText(')) violations.push('share_simple_blob_builder');
+  if (fnText.includes('csOpenPrintDebriefFallback(')) violations.push('export_print_fallback');
+  if (shareFnText.includes('csOpenPrintDebriefFallback(')) violations.push('share_print_fallback');
+
+  const btn = document.getElementById('csPdfBtn');
+  if (btn && (btn.getAttribute('onclick') || '').trim()) violations.push('pdf_button_inline_onclick');
+  const shareBtn = document.getElementById('csShareBtn');
+  if (shareBtn && (shareBtn.getAttribute('onclick') || '').trim()) violations.push('share_button_inline_onclick');
+
+  if (violations.length) {
+    throw new Error(`pdf_export_lock_violation:${context}:${violations.join(',')}`);
+  }
+}
 
 function csLooksLikeStubHtml2Pdf(lib) {
   if (typeof lib !== 'function') return false;
@@ -12176,7 +12239,8 @@ function csGetReportFileName() {
 }
 
 function csBuildDebriefExportNode() {
-  const source = document.querySelector('#pagCS6 .cs-page-inner');
+  csAssertPdfExportLock('build_export_node');
+  const source = document.querySelector(csPdfExportSourceSelector());
   const c = csState.case;
   const debriefModel = csGetDebriefModel();
   if (!source || !c || !debriefModel) return null;
@@ -12330,6 +12394,7 @@ function csBuildDebriefExportNode() {
 }
 
 async function csGenerateDebriefPdfBlob() {
+  csAssertPdfExportLock('generate_pdf_blob');
   const exportNode = csBuildDebriefExportNode();
   if (!exportNode) return null;
 
@@ -12377,6 +12442,11 @@ function csOpenPrintDebriefFallback() {
     console.warn('Print fallback failed.', err);
     return false;
   }
+}
+
+function csTryUnlockedPdfFallback() {
+  if (!csCanUsePdfFallbackPath()) return false;
+  return csOpenPrintDebriefFallback();
 }
 
 function csDownloadBlob(blob, fileName) {
@@ -12717,7 +12787,11 @@ window.__EIDOS_TRACE_PDF_EXPORT = function __EIDOS_TRACE_PDF_EXPORT() {
     impl: window.__EIDOS_PDF_EXPORT_IMPL || '',
     pipeline: 'client-debrief-dom-html2pdf',
     usesApiEndpoint: false,
-    exportSourceSelector: '#pagCS6 .cs-page-inner',
+    exportSourceSelector: csPdfExportSourceSelector(),
+    lockEnabled: !!CS_PDF_EXPORT_LOCK.enabled,
+    lockOverrideEnabled: csPdfExportOverrideEnabled(),
+    lockFallbackAllowed: csCanUsePdfFallbackPath(),
+    lockOverrideFlag: CS_PDF_EXPORT_LOCK.overrideFlag,
     hasHtml2PdfGlobal: !!window.html2pdf,
     html2pdfStubDetected: csLooksLikeStubHtml2Pdf(window.html2pdf),
     buttonId: btn ? btn.id : null,
@@ -12730,6 +12804,8 @@ window.__EIDOS_TRACE_PDF_EXPORT = function __EIDOS_TRACE_PDF_EXPORT() {
     hasLegacyWindowPrintInFunction: fnText.includes('window.print'),
     hasHtml2PdfInFunction: fnText.includes('csGenerateDebriefPdfBlob('),
     hasHtml2PdfInShareFunction: shareFnText.includes('csGenerateDebriefPdfBlob('),
+    hasPrintFallbackInFunction: fnText.includes('csOpenPrintDebriefFallback('),
+    hasPrintFallbackInShareFunction: shareFnText.includes('csOpenPrintDebriefFallback('),
     usesSimpleTextFallbackInFunction: fnText.includes('csDownloadSimpleFallbackPdf('),
     usesSimpleTextFallbackInShareFunction: shareFnText.includes('csDownloadSimpleFallbackPdf('),
     scriptFile: Array.from(document.querySelectorAll('script[src]')).map(s => s.getAttribute('src'))
@@ -12739,6 +12815,7 @@ window.__EIDOS_TRACE_PDF_EXPORT = function __EIDOS_TRACE_PDF_EXPORT() {
 async function csShareReport() {
   const c = csState.case;
   if (!c) return;
+  csAssertPdfExportLock('share_report');
 
   const btn = document.getElementById('csShareBtn');
   const originalLabel = btn ? btn.textContent : 'Share report';
@@ -12802,10 +12879,12 @@ async function csShareReport() {
     } else if (code === 'pdf_payload_unavailable') {
       _showToast('Could not build report payload. Please refresh and retry.', 2800);
     } else {
-      _showToast('Could not prepare report for sharing right now. Opening print dialog…', 2600);
+      _showToast('Could not prepare report for sharing right now.', 2600);
     }
-    if (csOpenPrintDebriefFallback()) {
+    if (csTryUnlockedPdfFallback()) {
       _showToast('Opened print dialog to save/share the current debrief PDF.', 2600);
+    } else if (CS_PDF_EXPORT_LOCK.enabled && !csPdfExportOverrideEnabled()) {
+      _showToast('PDF export lock blocked fallback path. Retry once debrief is fully loaded.', 3000);
     } else {
       _showToast('Could not generate report PDF right now.', 2600);
     }
@@ -12818,6 +12897,7 @@ async function csShareReport() {
 async function csExportPDF() {
   const c = csState.case;
   if (!c) return;
+  csAssertPdfExportLock('export_pdf');
 
   const btn = document.getElementById('csPdfBtn');
   const originalLabel = btn ? btn.textContent : 'Save as PDF';
@@ -12853,10 +12933,14 @@ async function csExportPDF() {
     } else if (code === 'pdf_payload_unavailable') {
       _showToast('Could not build report payload. Please refresh and retry.', 2600);
     } else {
-      _showToast('Could not export styled PDF right now. Opening print dialog…', 2600);
+      _showToast('Could not export styled PDF right now.', 2600);
     }
-    if (csOpenPrintDebriefFallback()) {
+    if (csTryUnlockedPdfFallback()) {
       _showToast('Opened print dialog for PDF save.', 2400);
+      return;
+    }
+    if (CS_PDF_EXPORT_LOCK.enabled && !csPdfExportOverrideEnabled()) {
+      _showToast('PDF export lock blocked fallback path. Retry once debrief is fully loaded.', 3000);
       return;
     }
     _showToast('Could not generate PDF. Please try again.', 2600);

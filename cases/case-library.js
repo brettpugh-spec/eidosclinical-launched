@@ -124,7 +124,7 @@ const CASE_LIBRARY = {
       ],
       correctDx: 'Long Head of Biceps (LHB) Tendinopathy',
       correctDxAliases: ['lhb', 'lhb tendinopathy', 'long head biceps', 'biceps tendinopathy', 'long head of biceps tendinopathy', 'bicipital tendinopathy'],
-      keyDifferentials: ['Rotator Cuff Tendinopathy (Shoulder Tendon Pain)', 'SLAP lesion', 'AC joint pathology'],
+      keyDifferentials: ['Rotator Cuff Tendinopathy (Shoulder Tendon Pain)', 'SLAP lesion', 'AC Joint Pathology'],
       keyFindings: [
         { icon: '✓', text: '<strong>Triple positive LHB cluster</strong> — Speed\'s, Yergason\'s, and upper cut all positive and reproducing bicipital groove pain is the discriminating cluster for LHB tendinopathy.' },
         { icon: '✓', text: '<strong>Point tenderness over bicipital groove at 10° IR</strong> — confirms the LHB tendon as the pain source.' },
@@ -892,8 +892,8 @@ const CASE_LIBRARY = {
           { name: 'Apprehension Test', result: 'Negative — no feeling of GH joint instability.', valence: 'neg' },
         ]},
       ],
-      correctDx: 'Acromioclavicular (AC) Joint Sprain / Separation',
-      correctDxAliases: ['ac joint sprain', 'ac joint separation', 'ac sprain', 'acromioclavicular sprain', 'acromioclavicular joint separation'],
+      correctDx: 'AC Joint Pathology',
+      correctDxAliases: ['ac joint pathology', 'ac joint sprain', 'ac joint separation', 'ac sprain', 'acromioclavicular sprain', 'acromioclavicular joint separation', 'acromioclavicular (ac) joint sprain / separation'],
       keyDifferentials: ['Clavicle Fracture', 'Rotator Cuff Tear', 'Subacromial Bursitis (traumatic)'],
       keyFindings: [
         { icon: '✓', text: '<strong>Mechanism of injury</strong> — direct fall onto the point of the shoulder with the arm adducted is the textbook mechanism for an AC joint separation.' },
@@ -902,7 +902,7 @@ const CASE_LIBRARY = {
         { icon: '✗', text: '<strong>Negative lag signs</strong> — rules out an acute traumatic rotator cuff tear.' },
       ],
       rubric: [
-        { criterion: 'Correct primary diagnosis (AC Joint Sprain)', key: 'finalDx', weight: 3 },
+        { criterion: 'Correct primary diagnosis (AC Joint Pathology)', key: 'finalDx', weight: 3 },
         { criterion: 'Identifies mechanism of injury (direct lateral fall) as key', key: 'reasoning', weight: 2 },
         { criterion: 'Management involves acute sling (if severe), taping, and progressive ROM', key: 'management', weight: 2 },
         { criterion: 'Rules out clavicle fracture', key: 'reasoning', weight: 1 },
@@ -914,7 +914,7 @@ const CASE_LIBRARY = {
         { name: 'Glenohumeral stability (apprehension test)', result: 'Negative — no apprehension or instability with external rotation. GH joint integrity confirmed.', valence: 'neg' },
         { name: 'Bicipital groove palpation (Speed\'s test)', result: 'Negative — no bicipital groove tenderness, no pain with resisted forward flexion. LHB tendon not implicated.', valence: 'neg', isDistractor: true },
       ],
-      expertReasoningPrompt: `The correct diagnosis is an Acromioclavicular (AC) Joint Sprain (likely Grade II/III given the visible step deformity). The mechanism of injury—a direct lateral blow to the point of the shoulder with the arm at the side—drives the acromion inferiorly while the clavicle remains stabilized, tearing the AC and potentially coracoclavicular (CC) ligaments. The physical exam confirms this with point tenderness over the AC joint, end-range pain (where the clavicle must rotate), and a positive cross-body adduction test. The lack of mid-shaft clavicle tenderness reduces the likelihood of a fracture. Because the rotator cuff tests are negative, we can rule out an acute traumatic tear. Management requires initial protection (taping or short-term sling for pain relief) followed by progressive scapular stabilization and deltoid strengthening.`,
+      expertReasoningPrompt: `The correct diagnosis is AC Joint Pathology, specifically an Acromioclavicular (AC) Joint Sprain (likely Grade II/III given the visible step deformity). The mechanism of injury—a direct lateral blow to the point of the shoulder with the arm at the side—drives the acromion inferiorly while the clavicle remains stabilized, tearing the AC and potentially coracoclavicular (CC) ligaments. The physical exam confirms this with point tenderness over the AC joint, end-range pain (where the clavicle must rotate), and a positive cross-body adduction test. The lack of mid-shaft clavicle tenderness reduces the likelihood of a fracture. Because the rotator cuff tests are negative, we can rule out an acute traumatic tear. Management requires initial protection (taping or short-term sling for pain relief) followed by progressive scapular stabilization and deltoid strengthening.`,
     },
 
     {
@@ -1155,7 +1155,7 @@ const CASE_LIBRARY = {
       ],
       correctDx: 'Adhesive Capsulitis (Frozen Shoulder)',
       correctDxAliases: ['adhesive capsulitis', 'frozen shoulder', 'frozen shoulder syndrome', 'capsulitis', 'periarthritis shoulder'],
-      keyDifferentials: ['Rotator Cuff Tendinopathy (Shoulder Tendon Pain)', 'Rotator Cuff Tear (Partial Tear)', 'Posterior capsular tightness (GIRD)', 'GH OA'],
+      keyDifferentials: ['Rotator Cuff Tendinopathy (Shoulder Tendon Pain)', 'Rotator Cuff Tear (Partial Tear)', 'Glenohumeral Osteoarthritis'],
       keyFindings: [
         { icon: '✓', text: '<strong>Global passive ROM restriction with firm capsular end-feel</strong> — the hallmark of adhesive capsulitis is loss of passive ROM in all planes; no passive gain over active is pathognomonic. ER is classically the most restricted.' },
         { icon: '✓', text: '<strong>Type 2 diabetes (insulin-dependent, suboptimal control)</strong> — the single strongest identifiable risk factor for frozen shoulder. Should dramatically raise clinical suspicion at the outset.' },
@@ -2433,7 +2433,7 @@ function generateCaseLibraryPack3() {
     const vignette = makeVignette(profileLevel, region, seedIndex);
     const fallbackInfo = makeInfo(profileLevel, seedIndex);
     return {
-      title: `${region} Case ${String(seedIndex + 1).padStart(2, '0')} (${profileLevel} template)`,
+      title: `${region} Case ${String(seedIndex + 1).padStart(2, '0')}`,
       info: _deriveInfoFromVignette(vignette, fallbackInfo),
       dxName: bank.name,
       dxAliases: _deepClone(bank.aliases || []),
@@ -2509,7 +2509,7 @@ function generateCaseLibraryPack3() {
         let generatedVignette = makeVignette(level, region, i);
         let generatedExam = makeExam(level, region);
         let generatedAdditionalTests = makeAdditionalTests(level, region);
-        let generatedTitle = `${region} Case ${seed.code} (${level})`;
+        let generatedTitle = `${region} Case ${seed.code}`;
         let generatedInfo = makeInfo(level, i);
         let generatedKeyDifferentials = ['Alternative musculoskeletal pathology', 'Neural involvement', 'Referred pain source'];
         let generatedKeyFindings = [
@@ -2712,6 +2712,33 @@ function generateCaseLibraryPack3() {
             generatedRubric = baseRubric(bank.name);
             generatedExpertReasoning = selected.expertReasoningPrompt || generatedExpertReasoning;
           }
+        }
+
+        // Lock Shoulder beginner Case 01 primary diagnosis to impingement terminology
+        // so debrief wording and scoring labels stay aligned for this template.
+        if (id === 'bS01') {
+          bank = {
+            name: 'Shoulder Impingement Syndrome (Subacromial)',
+            aliases: [
+              'shoulder impingement',
+              'shoulder impingement syndrome',
+              'subacromial impingement',
+              'subacromial pain syndrome',
+              'impingement',
+              'rotator cuff tendinopathy',
+              'rotator cuff tendinopathy (shoulder tendon pain)',
+              'rc tendinopathy',
+              'rotator cuff related shoulder pain'
+            ]
+          };
+          generatedRubric = baseRubric(bank.name);
+          generatedKeyDifferentials = [
+            'Rotator Cuff Tendinopathy (Shoulder Tendon Pain)',
+            'Subacromial Bursitis',
+            'AC Joint Pathology'
+          ];
+          generatedExpertReasoning =
+            'This template is scored with Shoulder Impingement Syndrome (Subacromial) as the primary diagnosis. Rotator cuff tendinopathy/subacromial pain terms are clinically overlapping and accepted as related terminology.';
         }
 
         generatedInfo = _deriveInfoFromVignette(generatedVignette, generatedInfo);
