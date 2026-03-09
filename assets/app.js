@@ -1,4 +1,4 @@
-window.__EIDOS_BUILD = 'kit-uid-4625fa2552-r9';
+window.__EIDOS_BUILD = 'kit-uid-4625fa2552-r11';
 window.__EIDOS_FILE = '/Users/brettpugh/Desktop/eidos/index.html';
 
 // ══════════════════════════════════════════
@@ -7931,6 +7931,7 @@ const csState = {
 };
 
 const CS_CHALLENGE_ROUTE_PARAM = 'challenge';
+const CS_SHARED_REPORT_ROUTE_PARAM = 'cs_report';
 const CS_OWNER_LINKS_STORAGE_KEY = 'eidos_cs_owner_links_v1';
 const CS_CHALLENGE_SESSION_STORAGE_KEY = 'eidos_cs_challenge_state_v1';
 const CS_CHALLENGE_API_ENDPOINTS = ['/challenge', '/functions/challenge', '/api/challenge', '/.netlify/functions/challenge'];
@@ -8505,6 +8506,249 @@ function csNormalizeCompareText(value) {
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function csBase64UrlEncodeUtf8(value) {
+  try {
+    const utf8 = encodeURIComponent(String(value || ''))
+      .replace(/%([0-9A-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+    return btoa(utf8)
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/g, '');
+  } catch (_) {
+    return '';
+  }
+}
+
+function csBase64UrlDecodeUtf8(value) {
+  try {
+    let input = String(value || '').trim();
+    if (!input) return '';
+    input = input.replace(/-/g, '+').replace(/_/g, '/');
+    while (input.length % 4) input += '=';
+    const binary = atob(input);
+    let escaped = '';
+    for (let i = 0; i < binary.length; i += 1) {
+      escaped += `%${(`00${binary.charCodeAt(i).toString(16)}`).slice(-2)}`;
+    }
+    return decodeURIComponent(escaped);
+  } catch (_) {
+    return '';
+  }
+}
+
+function csFindCaseById(caseId, preferredLevel) {
+  const id = String(caseId || '').trim();
+  if (!id) return null;
+  const levels = ['beginner', 'intermediate', 'advanced'];
+  const orderedLevels = [];
+  const pref = String(preferredLevel || '').trim().toLowerCase();
+  if (pref && levels.includes(pref)) orderedLevels.push(pref);
+  levels.forEach((lvl) => { if (!orderedLevels.includes(lvl)) orderedLevels.push(lvl); });
+  for (const lvl of orderedLevels) {
+    const hit = (CASE_LIBRARY[lvl] || []).find((entry) => entry && String(entry.id || '').trim() === id);
+    if (hit) return { level: lvl, caseData: JSON.parse(JSON.stringify(hit)) };
+  }
+  return null;
+}
+
+function csTrimSharedReportText(value, maxLen) {
+  const text = String(value || '').trim();
+  const cap = Math.max(0, Math.floor(Number(maxLen) || 0));
+  if (!cap || text.length <= cap) return text;
+  return text.slice(0, cap);
+}
+
+function csBuildSharedReportArray(values, maxItems, itemMaxLen) {
+  const src = Array.isArray(values) ? values : [];
+  const countCap = Math.max(0, Math.floor(Number(maxItems) || 0));
+  const itemCap = Math.max(0, Math.floor(Number(itemMaxLen) || 0));
+  const out = [];
+  for (let i = 0; i < src.length; i += 1) {
+    const trimmed = csTrimSharedReportText(src[i], itemCap);
+    if (!trimmed) continue;
+    out.push(trimmed);
+    if (countCap && out.length >= countCap) break;
+  }
+  return out;
+}
+
+function csBuildSharedReportPayload(options = {}) {
+  const c = csState.case;
+  if (!c || !c.id) return null;
+  const shortTextMax = Math.max(40, Math.floor(Number(options.shortTextMax) || 180));
+  const longTextMax = Math.max(80, Math.floor(Number(options.longTextMax) || 420));
+  const listCountMax = Math.max(5, Math.floor(Number(options.listCountMax) || 40));
+  const listItemMax = Math.max(20, Math.floor(Number(options.listItemMax) || 90));
+  const revealedNames = csBuildSharedReportArray(
+    (csState.revealed || []).map((r) => String(r && r.name || '').trim()),
+    listCountMax,
+    listItemMax
+  );
+  const redFlags = csBuildSharedReportArray(
+    (csState.redFlags || []).map((v) => String(v || '').trim()),
+    listCountMax,
+    listItemMax
+  );
+  const redHerringWasted = csBuildSharedReportArray(
+    Array.from(csState.redHerringWasted || []).map((v) => String(v || '').trim()),
+    listCountMax,
+    listItemMax
+  );
+  return {
+    v: 1,
+    case_id: String(c.id || '').trim(),
+    level: String(csState.level || '').trim().toLowerCase(),
+    ddx1: csTrimSharedReportText(csState.ddx1, shortTextMax),
+    ddx2: csTrimSharedReportText(csState.ddx2, shortTextMax),
+    ddx3: csTrimSharedReportText(csState.ddx3, shortTextMax),
+    upd_ddx1: csTrimSharedReportText(csState.updDdx1, shortTextMax),
+    upd_ddx2: csTrimSharedReportText(csState.updDdx2, shortTextMax),
+    upd_ddx3: csTrimSharedReportText(csState.updDdx3, shortTextMax),
+    final_dx: csTrimSharedReportText(csState.finalDx, shortTextMax),
+    reasoning1: csTrimSharedReportText(csState.reasoning1, longTextMax),
+    reasoning2: csTrimSharedReportText(csState.reasoning2, longTextMax),
+    final_reasoning: csTrimSharedReportText(csState.finalReasoning, longTextMax),
+    management: csTrimSharedReportText(csState.management, longTextMax),
+    imaging: csTrimSharedReportText(csState.imagingSuggestion, longTextMax),
+    confidence: csClampConfidence(csState.confidence),
+    red_flags: redFlags,
+    revealed_tests: revealedNames,
+    red_herring_wasted: redHerringWasted,
+    tokens_total: Number(csState.tokensTotal) || 8,
+    tokens_used: Number(csState.tokensUsed) || 0
+  };
+}
+
+function csBuildMinimalSharedReportPayload() {
+  const c = csState.case;
+  if (!c || !c.id) return null;
+  return {
+    v: 1,
+    case_id: String(c.id || '').trim(),
+    level: String(csState.level || '').trim().toLowerCase(),
+    ddx1: csTrimSharedReportText(csState.ddx1, 120),
+    ddx2: csTrimSharedReportText(csState.ddx2, 120),
+    ddx3: csTrimSharedReportText(csState.ddx3, 120),
+    final_dx: csTrimSharedReportText(csState.finalDx, 120),
+    confidence: csClampConfidence(csState.confidence),
+    red_flags: csBuildSharedReportArray(csState.redFlags || [], 10, 60),
+    revealed_tests: csBuildSharedReportArray((csState.revealed || []).map((r) => r && r.name), 16, 60),
+    tokens_total: Number(csState.tokensTotal) || 8,
+    tokens_used: Number(csState.tokensUsed) || 0
+  };
+}
+
+function csBuildSharedReportUrlFromEncoded(encoded) {
+  if (!encoded) return '';
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set(CS_SHARED_REPORT_ROUTE_PARAM, encoded);
+    return `${url.origin}${url.pathname}${url.search}`;
+  } catch (_) {
+    return '';
+  }
+}
+
+function csBuildSharedReportUrl() {
+  const payloadProfiles = [
+    { shortTextMax: 180, longTextMax: 420, listCountMax: 40, listItemMax: 90 },
+    { shortTextMax: 140, longTextMax: 280, listCountMax: 24, listItemMax: 70 },
+    { shortTextMax: 100, longTextMax: 180, listCountMax: 16, listItemMax: 52 }
+  ];
+
+  for (const profile of payloadProfiles) {
+    const payload = csBuildSharedReportPayload(profile);
+    if (!payload) continue;
+    const encoded = csBase64UrlEncodeUtf8(JSON.stringify(payload));
+    if (!encoded || encoded.length > 7000) continue;
+    const url = csBuildSharedReportUrlFromEncoded(encoded);
+    if (url) return url;
+  }
+
+  const minimalPayload = csBuildMinimalSharedReportPayload();
+  const encodedMinimal = minimalPayload ? csBase64UrlEncodeUtf8(JSON.stringify(minimalPayload)) : '';
+  if (encodedMinimal && encodedMinimal.length <= 7000) {
+    const url = csBuildSharedReportUrlFromEncoded(encodedMinimal);
+    if (url) return url;
+  }
+
+  return window.location.href;
+}
+
+function csReadSharedReportPayloadFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    const token = (url.searchParams.get(CS_SHARED_REPORT_ROUTE_PARAM) || '').trim();
+    if (!token) return null;
+    const decoded = csBase64UrlDecodeUtf8(token);
+    if (!decoded) return null;
+    const parsed = JSON.parse(decoded);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function csRestoreFromSharedReportPayload(payload) {
+  if (!payload || typeof payload !== 'object') return false;
+  const caseRef = csFindCaseById(payload.case_id, payload.level);
+  if (!caseRef) return false;
+
+  try {
+    csResetChallengeContext({ clearRoute: false });
+  } catch (_) {}
+
+  csState.active = true;
+  csState.level = caseRef.level;
+  csState.case = caseRef.caseData;
+  csState.tokensTotal = Number(payload.tokens_total) > 0 ? Number(payload.tokens_total) : (caseRef.level === 'beginner' ? 8 : caseRef.level === 'intermediate' ? 6 : 5);
+  csState.tokensUsed = Math.max(0, Math.floor(Number(payload.tokens_used) || 0));
+  csState.ddx1 = String(payload.ddx1 || '');
+  csState.ddx2 = String(payload.ddx2 || '');
+  csState.ddx3 = String(payload.ddx3 || '');
+  csState.reasoning1 = String(payload.reasoning1 || '');
+  csState.updDdx1 = String(payload.upd_ddx1 || '');
+  csState.updDdx2 = String(payload.upd_ddx2 || '');
+  csState.updDdx3 = String(payload.upd_ddx3 || '');
+  csState.reasoning2 = String(payload.reasoning2 || '');
+  csState.finalDx = String(payload.final_dx || '');
+  csState.finalReasoning = String(payload.final_reasoning || '');
+  csState.management = String(payload.management || '');
+  csState.imagingSuggestion = String(payload.imaging || '');
+  csState.confidence = csClampConfidence(payload.confidence);
+  csState.redFlags = Array.isArray(payload.red_flags) ? payload.red_flags.map((v) => String(v || '')).filter(Boolean) : [];
+  const revealedNames = Array.isArray(payload.revealed_tests) ? payload.revealed_tests : [];
+  csState.revealed = revealedNames
+    .map((name) => String(name || '').trim())
+    .filter(Boolean)
+    .map((name) => ({ category: 'Selected Test', name, result: '', valence: 'neutral' }));
+  csState.redHerringWasted = new Set(Array.isArray(payload.red_herring_wasted) ? payload.red_herring_wasted.map((v) => String(v || '').trim()).filter(Boolean) : []);
+  csState.aiFeedbackHtml = null;
+  csState.attemptSummary = null;
+  csState.lastScoreResult = null;
+  csState.lastDebriefModel = null;
+  csState.progressSavedForCase = true;
+  csClearPdfBlobCache();
+
+  state.mode = 'clinician';
+  _applyModeUI('clinician');
+  updateDdxDatalistForCase(csState.case);
+  csRenderVignette();
+
+  const hp = document.getElementById('pageHome');
+  const container = document.querySelector('.container');
+  if (hp) hp.style.display = 'none';
+  if (container) container.style.display = '';
+  document.querySelectorAll('.page').forEach((p) => p.classList.remove('active','slide-fwd','slide-back'));
+  const target = document.getElementById('pagCS6');
+  if (target) target.classList.add('active');
+  _restoreCsFields();
+  csGenerateDebrief({ skipFieldCapture: true });
+  setUIRoute('split');
+  setLastPageId('pagCS6');
+  return true;
 }
 
 function csGetChallengeTokenFromUrl() {
@@ -12100,12 +12344,19 @@ document.addEventListener('DOMContentLoaded', () => {
   initDataInlineHandlers();
   initAboutOverlayClose();
   _trackPageView();
+  const sharedReportPayload = csReadSharedReportPayloadFromUrl();
+  const restoredFromSharedReport = !!(sharedReportPayload && csRestoreFromSharedReportPayload(sharedReportPayload));
   const uiRoute = getUIRoute();
-  const shouldTryRestore = uiRoute === 'split';
+  const shouldTryRestore = !restoredFromSharedReport && uiRoute === 'split';
   const restored = shouldTryRestore ? loadFromStorage() : false;
   const hp = document.getElementById('pageHome');
   const container = document.querySelector('.container');
-  if (restored) {
+  if (restoredFromSharedReport) {
+    if (hp) hp.style.display = 'none';
+    if (container) container.style.display = '';
+    setUIRoute('split');
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  } else if (restored) {
     if (hp) hp.style.display = 'none';
     if (container) container.style.display = '';
     setUIRoute('split');
@@ -13083,10 +13334,11 @@ async function csShareReport() {
 
   const btn = document.getElementById('csShareBtn');
   const originalLabel = btn ? btn.textContent : 'Share report';
+  const sharedReportUrl = csBuildSharedReportUrl();
   const sharePayload = {
     title: 'EIDOS Clinical Case Report',
     text: `Clinical Case Simulation report: ${c.title}`,
-    url: window.location.href
+    url: sharedReportUrl
   };
   const shareTextFallback = `${sharePayload.title}\n${sharePayload.text}\n${sharePayload.url}`;
   const copyShareTextFallback = async () => {
