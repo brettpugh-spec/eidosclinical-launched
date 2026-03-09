@@ -7922,6 +7922,7 @@ const csState = {
   examRowOrderCaseKey: '',
   attemptSummary: null,
   lastScoreResult: null,
+  lastDebriefModel: null,
 };
 
 const CS_CHALLENGE_ROUTE_PARAM = 'challenge';
@@ -8191,6 +8192,7 @@ function csResetSessionData() {
   csState.examRowOrderCaseKey = '';
   csState.attemptSummary = null;
   csState.lastScoreResult = null;
+  csState.lastDebriefModel = null;
   // Reset inputs
   ['csDdx1','csDdx2','csDdx3','csReasoning1','csUpdDdx1','csUpdDdx2','csUpdDdx3',
    'csReasoning2','csFinalDx','csFinalReasoning','csManagement','csImagingSuggestion'].forEach(id => {
@@ -11309,6 +11311,157 @@ function csGetWeightedScoreResult() {
   return null;
 }
 
+function csInferCaseLevel(c) {
+  const title = String(c && c.title ? c.title : '');
+  const titleMatch = title.match(/\b(beginner|intermediate|advanced)\b/i);
+  if (titleMatch && titleMatch[1]) return String(titleMatch[1]).toLowerCase();
+
+  const explicit = String(c && (c.level || c._level || '') || '').trim().toLowerCase();
+  if (explicit) return explicit;
+
+  const active = String(csState.level || '').trim().toLowerCase();
+  if (active) return active;
+  return '';
+}
+
+function csCaseLevelLabel(levelValue) {
+  const level = String(levelValue || '').trim().toLowerCase();
+  if (!level) return '';
+  return `${level.charAt(0).toUpperCase()}${level.slice(1)}`;
+}
+
+function csBuildDebriefModel(c, scoreResult) {
+  if (!c || !scoreResult) return null;
+  const totalScore = Number(scoreResult.totalScore) || 0;
+  const maxScore = Number(scoreResult.maxScore) || 100;
+  const caseLevel = csInferCaseLevel(c);
+  const caseLevelLabel = csCaseLevelLabel(caseLevel);
+  const caseRegion = csImperializeText(c.region || '');
+  const caseTitle = csImperializeText(c.title || 'Clinical Case Simulation Debrief');
+  const verdict = totalScore >= 85 ? 'Strong reasoning' : totalScore >= 65 ? 'Developing reasoning' : 'Needs focused review';
+  const verdictSub = scoreResult.feedbackSummary || 'Review the category scores and expert reasoning report to refine your next attempt.';
+  const dxCorrect = !!(scoreResult.meta && scoreResult.meta.differential && scoreResult.meta.differential.primaryCorrect);
+  const rubricRows = (scoreResult.detailedFeedback || []).map((r) => ({
+    criterion: csImperializeText(r.criterion || 'Category'),
+    note: csImperializeText(r.note || 'No feedback.'),
+    score: Number(r.score) || 0,
+    maxScore: Number(r.maxScore) || 0
+  }));
+  const categoryScores = (scoreResult.breakdown || []).map((row) => ({
+    key: row.key || '',
+    label: csImperializeText(row.label || 'Category'),
+    score: Number(row.score) || 0,
+    maxScore: Number(row.maxScore) || 0,
+    note: csImperializeText(row.note || '')
+  }));
+  const selectedDifferential = csWeightedCollectRankedDifferential()
+    .slice(0, 6)
+    .map((value) => csImperializeText(value))
+    .filter(Boolean);
+  const selectedTests = csWeightedUnique(
+    ((csState.revealed || []).map((r) => (r && r.name ? r.name : '')))
+      .concat(Array.from(csState.redHerringWasted || []))
+  ).map((value) => csImperializeText(value)).filter(Boolean);
+  return {
+    caseKey: String(c.id || c.title || ''),
+    scoreVersion: Number(totalScore),
+    caseTitle,
+    caseRegion,
+    caseLevel,
+    caseLevelLabel,
+    totalScore,
+    maxScore,
+    verdictTitle: csImperializeText(verdict),
+    verdictSubtitle: csImperializeText(verdictSub),
+    feedbackSummary: csImperializeText(scoreResult.feedbackSummary || verdictSub),
+    diagnosisComparison: {
+      dxCorrect,
+      userDiagnosis: csImperializeText(csState.finalDx) || '—',
+      userConfidence: `${csConfidenceLabel(csState.confidence)} (${Math.round(csClampConfidence(csState.confidence))}%)`,
+      correctDiagnosis: csImperializeText(c.correctDx || 'Not specified')
+    },
+    keyDifferentials: (c.keyDifferentials || []).map((value) => csImperializeText(value)).filter(Boolean),
+    keyFindings: (c.keyFindings || []).map((f) => ({
+      icon: f && f.icon ? String(f.icon) : '',
+      textHtml: csImperializeHtml((f && f.text) || '')
+    })),
+    categoryScores,
+    rubricRows,
+    selectedDifferential,
+    selectedTests,
+    expertSections: csReportExpertSections(),
+    expertReasoningHtml: csState.aiFeedbackHtml ? csImperializeHtml(csState.aiFeedbackHtml) : ''
+  };
+}
+
+function csGetDebriefModel() {
+  const c = csState.case;
+  if (!c) return null;
+  const scoreResult = csGetWeightedScoreResult();
+  if (!scoreResult) return null;
+  const caseKey = String(c.id || c.title || '');
+  const cached = csState.lastDebriefModel;
+  if (
+    cached &&
+    cached.caseKey === caseKey &&
+    Number(cached.scoreVersion) === (Number(scoreResult.totalScore) || 0)
+  ) {
+    return cached;
+  }
+  const model = csBuildDebriefModel(c, scoreResult);
+  csState.lastDebriefModel = model;
+  return model;
+}
+
+function csRenderDebriefFromModel(c, model) {
+  if (!c || !model) return;
+  document.getElementById('csScoreNum').textContent = `${model.totalScore}`;
+  document.getElementById('csScoreDen').textContent = `/ ${model.maxScore}`;
+  document.getElementById('csVerdict').textContent = model.verdictTitle;
+  document.getElementById('csVerdictSub').textContent = model.verdictSubtitle;
+
+  const dxComp = document.getElementById('csDxComparison');
+  if (dxComp) {
+    dxComp.innerHTML = `
+      <div class="cs-dx-row">
+        <div class="cs-dx-block">
+          <span class="cs-dx-block-label">Your diagnosis</span>
+          <span class="cs-dx-block-value ${model.diagnosisComparison.dxCorrect ? 'correct' : 'incorrect'}">${escapeHtml(model.diagnosisComparison.userDiagnosis) || '—'}</span>
+          <span class="cs-dx-block-meta">Confidence: ${escapeHtml(model.diagnosisComparison.userConfidence)}</span>
+        </div>
+        <div class="cs-dx-block">
+          <span class="cs-dx-block-label">Correct diagnosis</span>
+          <span class="cs-dx-block-value correct">${escapeHtml(model.diagnosisComparison.correctDiagnosis)}</span>
+        </div>
+      </div>
+      <div class="cs-dx-differentials">
+        <span class="cs-dx-diff-label">Key differentials to consider</span>
+        ${model.keyDifferentials.map((d) => `<span class="cs-dx-diff-tag">${escapeHtml(d)}</span>`).join('')}
+      </div>`;
+  }
+
+  const kf = document.getElementById('csKeyFindings');
+  if (kf) {
+    kf.innerHTML = model.keyFindings.map((f) =>
+      `<div class="cs-key-finding">
+        <span class="cs-key-finding-icon">${escapeHtml(f.icon)}</span>
+        <span class="cs-key-finding-text">${f.textHtml}</span>
+      </div>`
+    ).join('');
+  }
+
+  const tbody = document.getElementById('csRubricBody');
+  if (tbody) {
+    tbody.innerHTML = model.rubricRows.map((r) =>
+      `<tr>
+        <td>${escapeHtml(r.criterion || 'Category')}</td>
+        <td style="font-size:0.72rem;color:var(--muted)">${escapeHtml(r.note || 'No feedback.')}</td>
+        <td class="cs-rubric-score ${Number(r.score) >= Number(r.maxScore) ? 'full' : Number(r.score) > 0 ? 'partial' : 'zero'}">${Number(r.score) || 0}/${Number(r.maxScore) || 0}</td>
+      </tr>`
+    ).join('');
+  }
+}
+
 async function csGenerateDebrief() {
   csSaveFieldState();
   csGoTo('pagCS6');
@@ -11319,62 +11472,9 @@ async function csGenerateDebrief() {
   const scoreResult = csComputeWeightedScore(c);
   if (!scoreResult) return;
   csState.lastScoreResult = scoreResult;
-
-  const totalScore = Number(scoreResult.totalScore) || 0;
-  const verdict = totalScore >= 85 ? 'Strong reasoning' : totalScore >= 65 ? 'Developing reasoning' : 'Needs focused review';
-  const verdictSub = scoreResult.feedbackSummary || 'Review the category scores and expert reasoning report to refine your next attempt.';
-  const dxCorrect = !!(scoreResult.meta && scoreResult.meta.differential && scoreResult.meta.differential.primaryCorrect);
-  const rubricRows = scoreResult.detailedFeedback || [];
-
-  // ── Render score ring ──
-  document.getElementById('csScoreNum').textContent = `${totalScore}`;
-  document.getElementById('csScoreDen').textContent = `/ ${scoreResult.maxScore || 100}`;
-  document.getElementById('csVerdict').textContent = csImperializeText(verdict);
-  document.getElementById('csVerdictSub').textContent = csImperializeText(verdictSub);
-
-  // ── Diagnosis comparison ──
-  const dxComp = document.getElementById('csDxComparison');
-  if (dxComp) {
-    dxComp.innerHTML = `
-      <div class="cs-dx-row">
-        <div class="cs-dx-block">
-          <span class="cs-dx-block-label">Your diagnosis</span>
-          <span class="cs-dx-block-value ${dxCorrect ? 'correct' : 'incorrect'}">${escapeHtml(csImperializeText(csState.finalDx)) || '—'}</span>
-          <span class="cs-dx-block-meta">Confidence: ${csConfidenceLabel(csState.confidence)} (${Math.round(csClampConfidence(csState.confidence))}%)</span>
-        </div>
-        <div class="cs-dx-block">
-          <span class="cs-dx-block-label">Correct diagnosis</span>
-          <span class="cs-dx-block-value correct">${escapeHtml(csImperializeText(c.correctDx))}</span>
-        </div>
-      </div>
-      <div class="cs-dx-differentials">
-        <span class="cs-dx-diff-label">Key differentials to consider</span>
-        ${(c.keyDifferentials || []).map(d => `<span class="cs-dx-diff-tag">${escapeHtml(csImperializeText(d))}</span>`).join('')}
-      </div>`;
-  }
-
-  // ── Key findings ──
-  const kf = document.getElementById('csKeyFindings');
-  if (kf) {
-    kf.innerHTML = (c.keyFindings || []).map(f =>
-      `<div class="cs-key-finding">
-        <span class="cs-key-finding-icon">${f.icon}</span>
-        <span class="cs-key-finding-text">${csImperializeHtml(f.text)}</span>
-      </div>`
-    ).join('');
-  }
-
-  // ── Rubric table ──
-  const tbody = document.getElementById('csRubricBody');
-  if (tbody) {
-    tbody.innerHTML = rubricRows.map(r =>
-      `<tr>
-        <td>${escapeHtml(csImperializeText(r.criterion || 'Category'))}</td>
-        <td style="font-size:0.72rem;color:var(--muted)">${escapeHtml(csImperializeText(r.note || 'No feedback.'))}</td>
-        <td class="cs-rubric-score ${Number(r.score) >= Number(r.maxScore) ? 'full' : Number(r.score) > 0 ? 'partial' : 'zero'}">${Number(r.score) || 0}/${Number(r.maxScore) || 0}</td>
-      </tr>`
-    ).join('');
-  }
+  const debriefModel = csBuildDebriefModel(c, scoreResult);
+  csState.lastDebriefModel = debriefModel;
+  csRenderDebriefFromModel(c, debriefModel);
 
   // ── AI feedback via Claude API ──
   const aiFeedback = document.getElementById('csAiFeedback');
@@ -11478,6 +11578,7 @@ Requirements:
     } // end else (not cached)
   }
 
+  csState.lastDebriefModel = csBuildDebriefModel(c, scoreResult);
   csState.attemptSummary = csBuildAttemptSummary(true);
   csUpdateChallengeControls();
 }
@@ -11640,6 +11741,7 @@ function loadFromStorage() {
       csState.aiFeedbackHtml  = cs.aiFeedbackHtml  || null;
       csState.attemptSummary  = cs.attemptSummary  || null;
       csState.lastScoreResult = cs.lastScoreResult || null;
+      csState.lastDebriefModel = null;
       csState.examRowOrder    = cs.examRowOrder    || {};
       csState.examRowOrderCaseKey = cs.examRowOrderCaseKey || '';
       csState.activeExamTab   = cs.activeExamTab   || null;
@@ -11963,18 +12065,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
 let _csHtml2PdfLibPromise = null;
 
+function csLooksLikeStubHtml2Pdf(lib) {
+  if (typeof lib !== 'function') return false;
+  try {
+    const worker = lib();
+    const outputFn = worker && worker.outputPdf;
+    return String(outputFn || '').includes('html2pdf_stub_fallback');
+  } catch (_) {
+    return false;
+  }
+}
+
+function csHasWorkingHtml2PdfLib() {
+  return !!(window.html2pdf && !csLooksLikeStubHtml2Pdf(window.html2pdf));
+}
+
 function csEnsureHtml2PdfLib() {
-  if (window.html2pdf) return Promise.resolve(window.html2pdf);
+  if (csHasWorkingHtml2PdfLib()) return Promise.resolve(window.html2pdf);
   if (_csHtml2PdfLibPromise) return _csHtml2PdfLibPromise;
 
   const scriptSources = [
+    'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js',
+    'https://unpkg.com/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js',
     './assets/html2pdf.bundle.min.js',
     'assets/html2pdf.bundle.min.js',
     '/assets/html2pdf.bundle.min.js'
   ];
 
   const loadOneSource = (src, idx) => new Promise((resolve, reject) => {
-    if (window.html2pdf) {
+    if (csHasWorkingHtml2PdfLib()) {
       resolve(window.html2pdf);
       return;
     }
@@ -11989,11 +12108,14 @@ function csEnsureHtml2PdfLib() {
     }
 
     const started = Date.now();
-    const maxWait = 2500;
+    const maxWait = 9000;
     const poll = setInterval(() => {
-      if (window.html2pdf) {
+      if (csHasWorkingHtml2PdfLib()) {
         clearInterval(poll);
         resolve(window.html2pdf);
+      } else if (window.html2pdf && csLooksLikeStubHtml2Pdf(window.html2pdf)) {
+        clearInterval(poll);
+        reject(new Error('html2pdf_stub_detected'));
       } else if ((Date.now() - started) > maxWait) {
         clearInterval(poll);
         reject(new Error('html2pdf_load_timeout'));
@@ -12011,7 +12133,7 @@ function csEnsureHtml2PdfLib() {
     for (let i = 0; i < scriptSources.length; i += 1) {
       try {
         await loadOneSource(scriptSources[i], i);
-        if (window.html2pdf) return window.html2pdf;
+        if (csHasWorkingHtml2PdfLib()) return window.html2pdf;
       } catch (err) {
         lastErr = err;
       }
@@ -12019,19 +12141,11 @@ function csEnsureHtml2PdfLib() {
     throw lastErr || new Error('html2pdf_load_unavailable');
   })();
 
+  _csHtml2PdfLibPromise = _csHtml2PdfLibPromise.catch((err) => {
+    _csHtml2PdfLibPromise = null;
+    throw err;
+  });
   return _csHtml2PdfLibPromise;
-}
-
-function csResolvePdfApiUrl() {
-  const explicitGlobal = String(window.EIDOS_PDF_EXPORT_URL || '').trim();
-  const metaEl = document.querySelector('meta[name="eidos-pdf-export-url"]');
-  const explicitMeta = metaEl ? String(metaEl.getAttribute('content') || '').trim() : '';
-  const explicit = explicitGlobal || explicitMeta;
-  if (explicit) return explicit;
-  if (window.location && window.location.protocol === 'file:') {
-    return 'http://127.0.0.1:8787/api/case/export-pdf';
-  }
-  return '/api/case/export-pdf';
 }
 
 function csWaitForDebriefReady(maxWaitMs = 7000) {
@@ -12063,78 +12177,148 @@ function csGetReportFileName() {
 
 function csBuildDebriefExportNode() {
   const source = document.querySelector('#pagCS6 .cs-page-inner');
-  if (!source) return null;
+  const c = csState.case;
+  const debriefModel = csGetDebriefModel();
+  if (!source || !c || !debriefModel) return null;
+
+  // Ensure export and visible debrief share the exact same rendered state.
+  csRenderDebriefFromModel(c, debriefModel);
 
   const clone = source.cloneNode(true);
   clone.querySelectorAll('.cs-try-another, #csPdfHeaderEl, #csPdfFooterEl').forEach((el) => el.remove());
-  clone.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id'));
   clone.querySelectorAll('button').forEach((btn) => btn.remove());
+  clone.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id'));
 
   const wrap = document.createElement('div');
-  wrap.className = 'cs-export-light';
-  wrap.style.cssText = 'width:780px;max-width:780px;padding:22px 22px 18px;background:#ffffff;color:#1a2630;';
+  wrap.className = 'cs-export-root';
+  wrap.style.cssText = "width:190mm;max-width:190mm;padding:0;margin:0;background:#ffffff;color:#1a2630;font-family:'DM Sans',sans-serif;";
 
   const exportStyle = document.createElement('style');
   exportStyle.textContent = `
-    .cs-export-light, .cs-export-light .cs-page-inner {
+    .cs-export-root, .cs-export-root .cs-page-inner {
       background: #ffffff !important;
       color: #1a2630 !important;
     }
-    .cs-export-light .cs-debrief-section,
-    .cs-export-light .cs-dx-block,
-    .cs-export-light .cs-key-finding,
-    .cs-export-light .cs-ai-feedback {
+    .cs-export-root .cs-page-inner {
+      width: 100% !important;
+      max-width: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    .cs-export-root .cs-debrief-hero {
+      padding: 10px 0 12px !important;
+      margin-bottom: 16px !important;
+      break-inside: avoid-page;
+      page-break-inside: avoid;
+    }
+    .cs-export-root .cs-debrief-section {
+      margin-bottom: 16px !important;
+      break-inside: auto;
+      page-break-inside: auto;
+    }
+    .cs-export-root .cs-dx-row,
+    .cs-export-root .cs-dx-block,
+    .cs-export-root .cs-key-finding,
+    .cs-export-root .cs-rubric-table tr {
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .cs-export-root .cs-debrief-section,
+    .cs-export-root .cs-dx-block,
+    .cs-export-root .cs-key-finding,
+    .cs-export-root .cs-ai-feedback {
       background: #ffffff !important;
       border-color: #d0dae0 !important;
     }
-    .cs-export-light .cs-debrief-section-title,
-    .cs-export-light .cs-dx-block-label,
-    .cs-export-light .cs-dx-block-meta,
-    .cs-export-light .cs-dx-diff-label,
-    .cs-export-light .cs-ai-section-label,
-    .cs-export-light .cs-rubric-table th,
-    .cs-export-light .cs-debrief-score-den,
-    .cs-export-light .cs-debrief-verdict-sub,
-    .cs-export-light .cs-rubric-table td:nth-child(2) {
+    .cs-export-root .cs-debrief-section-title,
+    .cs-export-root .cs-dx-block-label,
+    .cs-export-root .cs-dx-block-meta,
+    .cs-export-root .cs-dx-diff-label,
+    .cs-export-root .cs-ai-section-label,
+    .cs-export-root .cs-rubric-table th,
+    .cs-export-root .cs-debrief-score-den,
+    .cs-export-root .cs-debrief-verdict-sub,
+    .cs-export-root .cs-rubric-table td:nth-child(2) {
       color: #4e6375 !important;
     }
-    .cs-export-light .cs-rubric-table th,
-    .cs-export-light .cs-rubric-table td {
+    .cs-export-root .cs-rubric-table {
+      width: 100% !important;
+      border-collapse: collapse !important;
+    }
+    .cs-export-root .cs-rubric-table th,
+    .cs-export-root .cs-rubric-table td {
       border-bottom: 1px solid #d0dae0 !important;
     }
-    .cs-export-light .cs-rubric-table td,
-    .cs-export-light .cs-key-finding-text,
-    .cs-export-light .cs-ai-feedback,
-    .cs-export-light .cs-ai-feedback p,
-    .cs-export-light .cs-dx-block-value,
-    .cs-export-light .cs-dx-diff-tag,
-    .cs-export-light .cs-debrief-score-num,
-    .cs-export-light .cs-debrief-verdict {
+    .cs-export-root .cs-rubric-table td,
+    .cs-export-root .cs-key-finding-text,
+    .cs-export-root .cs-ai-feedback,
+    .cs-export-root .cs-ai-feedback p,
+    .cs-export-root .cs-dx-block-value,
+    .cs-export-root .cs-dx-diff-tag,
+    .cs-export-root .cs-debrief-score-num,
+    .cs-export-root .cs-debrief-verdict {
       color: #1a2630 !important;
     }
-    .cs-export-light .cs-rubric-score.full { color: #2f6c47 !important; }
-    .cs-export-light .cs-rubric-score.partial { color: #8a6d18 !important; }
-    .cs-export-light .cs-rubric-score.zero { color: #904040 !important; }
+    .cs-export-root .cs-ai-feedback {
+      break-inside: auto;
+      page-break-inside: auto;
+    }
+    .cs-export-root .cs-rubric-score.full { color: #2f6c47 !important; }
+    .cs-export-root .cs-rubric-score.partial { color: #8a6d18 !important; }
+    .cs-export-root .cs-rubric-score.zero { color: #904040 !important; }
+    .cs-export-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin: 0 0 12px 0;
+      padding: 0 0 10px 0;
+      border-bottom: 1px solid #d0dae0;
+    }
+    .cs-export-head-title {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 1.36rem;
+      line-height: 1.2;
+      color: #1a2630;
+      margin: 0;
+    }
+    .cs-export-head-meta {
+      margin-top: 3px;
+      font-size: 0.66rem;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: #4e6375;
+    }
+    .cs-export-head-date {
+      font-size: 0.62rem;
+      line-height: 1.45;
+      text-align: right;
+      color: #4e6375;
+      white-space: nowrap;
+    }
   `;
   wrap.appendChild(exportStyle);
 
   const header = document.createElement('div');
-  header.style.cssText = 'display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #d0dae0;';
+  header.className = 'cs-export-head';
 
   const left = document.createElement('div');
-  const title = document.createElement('div');
-  title.style.cssText = "font-family:'Cormorant Garamond',serif;font-size:1.45rem;line-height:1.2;color:#1a2630;";
-  title.textContent = csState.case?.title || 'Clinical Case Simulation Debrief';
+  const title = document.createElement('h2');
+  title.className = 'cs-export-head-title';
+  title.textContent = debriefModel.caseTitle || 'Clinical Case Simulation Debrief';
+
   const meta = document.createElement('div');
-  meta.style.cssText = "margin-top:4px;font-family:'DM Sans',sans-serif;font-size:0.66rem;letter-spacing:0.06em;text-transform:uppercase;color:#4e6375;";
-  const level = csState.level ? csState.level.charAt(0).toUpperCase() + csState.level.slice(1) : '';
-  const region = csState.case?.region || '';
-  meta.textContent = [region, level && `${level} Case`].filter(Boolean).join(' · ');
+  meta.className = 'cs-export-head-meta';
+  meta.textContent = [
+    debriefModel.caseRegion || '',
+    debriefModel.caseLevelLabel ? `${debriefModel.caseLevelLabel} Case` : ''
+  ].filter(Boolean).join(' · ');
+
   left.appendChild(title);
-  left.appendChild(meta);
+  if (meta.textContent) left.appendChild(meta);
 
   const right = document.createElement('div');
-  right.style.cssText = "font-family:'DM Sans',sans-serif;font-size:0.62rem;line-height:1.45;text-align:right;color:#4e6375;";
+  right.className = 'cs-export-head-date';
   right.textContent = `Generated ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
 
   header.appendChild(left);
@@ -12145,186 +12329,52 @@ function csBuildDebriefExportNode() {
   return wrap;
 }
 
-function csExtractPlainTextForPdf(node) {
-  if (!node) return 'EIDOS Clinical Case Report';
-
-  const clone = node.cloneNode(true);
-  if (clone.querySelectorAll) {
-    // Remove non-content nodes so CSS/JS never leaks into text-PDF fallback.
-    clone.querySelectorAll('style,script,noscript,template').forEach((el) => el.remove());
-
-    // Preserve readable breaks for common content blocks.
-    clone.querySelectorAll('br').forEach((el) => el.replaceWith('\n'));
-    clone.querySelectorAll('p,div,section,article,header,footer,h1,h2,h3,h4,h5,h6,tr').forEach((el) => {
-      el.appendChild(document.createTextNode('\n'));
-    });
-    clone.querySelectorAll('li').forEach((el) => {
-      if (el.firstChild) el.insertBefore(document.createTextNode('• '), el.firstChild);
-      el.appendChild(document.createTextNode('\n'));
-    });
-
-    // Add spacing between tag-like chips that are rendered inline in the app.
-    clone.querySelectorAll('.cs-dx-diff-tag,.cs-compare-chip,.cs-key-finding,.cs-dx-block').forEach((el) => {
-      el.appendChild(document.createTextNode('\n'));
-    });
-  }
-
-  const raw = String(clone.textContent || '')
-    .replace(/\u00a0/g, ' ')
-    .replace(/\r/g, '')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n[ \t]+/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-  if (!raw) return 'EIDOS Clinical Case Report';
-  return raw;
-}
-
-function csWrapPdfLine(text, maxChars) {
-  const value = String(text || '');
-  if (value.length <= maxChars) return [value];
-  const words = value.split(/\s+/).filter(Boolean);
-  const out = [];
-  let current = '';
-  words.forEach((word) => {
-    if (!current) {
-      current = word;
-      return;
-    }
-    const candidate = `${current} ${word}`;
-    if (candidate.length <= maxChars) {
-      current = candidate;
-    } else {
-      out.push(current);
-      current = word;
-    }
-  });
-  if (current) out.push(current);
-  return out.length ? out : [''];
-}
-
-function csEscapePdfText(value) {
-  return String(value || '')
-    .replace(/\\/g, '\\\\')
-    .replace(/\(/g, '\\(')
-    .replace(/\)/g, '\\)');
-}
-
-function csBuildSimplePdfBlobFromText(text) {
-  const pageWidth = 595.28;
-  const pageHeight = 841.89;
-  const marginLeft = 40;
-  const marginTop = 805;
-  const marginBottom = 44;
-  const lineHeight = 14;
-  const maxChars = 95;
-  const linesPerPage = Math.max(1, Math.floor((marginTop - marginBottom) / lineHeight));
-
-  const normalizedLines = String(text || '')
-    .split('\n')
-    .flatMap((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return [''];
-      return csWrapPdfLine(trimmed, maxChars);
-    });
-
-  const pages = [];
-  for (let i = 0; i < normalizedLines.length; i += linesPerPage) {
-    pages.push(normalizedLines.slice(i, i + linesPerPage));
-  }
-  if (!pages.length) pages.push(['EIDOS Clinical Case Report']);
-
-  const encoder = new TextEncoder();
-  const objects = [];
-  const fontId = 3;
-  const firstPageId = 4;
-  const maxObjectId = firstPageId + (pages.length * 2) - 1;
-
-  objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';
-  const kids = pages.map((_, idx) => `${firstPageId + (idx * 2)} 0 R`).join(' ');
-  objects[2] = `<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>`;
-  objects[fontId] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';
-
-  pages.forEach((pageLines, idx) => {
-    const pageId = firstPageId + (idx * 2);
-    const contentId = pageId + 1;
-    const textCommands = [];
-    pageLines.forEach((line, lineIdx) => {
-      if (lineIdx === 0) textCommands.push(`1 0 0 1 ${marginLeft} ${marginTop} Tm`);
-      else textCommands.push(`1 0 0 1 ${marginLeft} ${marginTop - (lineIdx * lineHeight)} Tm`);
-      textCommands.push(`(${csEscapePdfText(line)}) Tj`);
-    });
-    const streamBody = `BT\n/F1 10 Tf\n${textCommands.join('\n')}\nET\n`;
-    const streamLength = encoder.encode(streamBody).length;
-    objects[pageId] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth.toFixed(2)} ${pageHeight.toFixed(2)}] /Resources << /Font << /F1 ${fontId} 0 R >> >> /Contents ${contentId} 0 R >>`;
-    objects[contentId] = `<< /Length ${streamLength} >>\nstream\n${streamBody}endstream`;
-  });
-
-  const chunks = ['%PDF-1.4\n'];
-  const offsets = [0];
-  let cursor = encoder.encode(chunks[0]).length;
-
-  for (let id = 1; id <= maxObjectId; id += 1) {
-    const body = objects[id] || '<< >>';
-    offsets[id] = cursor;
-    const objStr = `${id} 0 obj\n${body}\nendobj\n`;
-    chunks.push(objStr);
-    cursor += encoder.encode(objStr).length;
-  }
-
-  const xrefOffset = cursor;
-  let xref = `xref\n0 ${maxObjectId + 1}\n0000000000 65535 f \n`;
-  for (let id = 1; id <= maxObjectId; id += 1) {
-    xref += `${String(offsets[id]).padStart(10, '0')} 00000 n \n`;
-  }
-  const trailer = `trailer\n<< /Size ${maxObjectId + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
-  chunks.push(xref + trailer);
-  return new Blob(chunks, { type: 'application/pdf' });
-}
-
 async function csGenerateDebriefPdfBlob() {
   const exportNode = csBuildDebriefExportNode();
   if (!exportNode) return null;
 
   const host = document.createElement('div');
-  host.style.cssText = 'position:fixed;left:-20000px;top:0;z-index:-1;pointer-events:none;';
+  host.style.cssText = 'position:absolute;left:0;top:0;z-index:-1;opacity:0;pointer-events:none;';
   host.appendChild(exportNode);
   document.body.appendChild(host);
 
   try {
-    try {
-      await csEnsureHtml2PdfLib();
-      if (window.html2pdf) {
-        const worker = window.html2pdf().set({
-          margin: [8, 8, 10, 8],
-          filename: csGetReportFileName(),
-          image: { type: 'jpeg', quality: 0.96 },
-          html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['css', 'legacy'] }
-        }).from(exportNode).toPdf();
-        const libBlob = await worker.outputPdf('blob');
-        if (libBlob) return libBlob;
+    await csEnsureHtml2PdfLib();
+    if (!csHasWorkingHtml2PdfLib()) throw new Error('html2pdf_unavailable');
+
+    const worker = window.html2pdf().set({
+      margin: [8, 8, 8, 8],
+      filename: csGetReportFileName(),
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        scrollX: 0,
+        scrollY: 0
+      },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: {
+        mode: ['css'],
+        avoid: ['.cs-dx-row', '.cs-dx-block', '.cs-key-finding', '.cs-rubric-table tr']
       }
-    } catch (libErr) {
-      console.warn('html2pdf unavailable; falling back to native text-PDF export.', libErr);
-    }
-    return csBuildSimplePdfBlobFromText(csExtractPlainTextForPdf(exportNode));
+    }).from(exportNode).toPdf();
+    const libBlob = await worker.outputPdf('blob');
+    if (!libBlob) throw new Error('pdf_blob_empty');
+    return libBlob;
   } finally {
     host.remove();
   }
 }
 
-function csDownloadSimpleFallbackPdf() {
+function csOpenPrintDebriefFallback() {
   try {
-    const exportNode = csBuildDebriefExportNode();
-    if (!exportNode) return false;
-    const text = csExtractPlainTextForPdf(exportNode);
-    const blob = csBuildSimplePdfBlobFromText(text);
-    csDownloadBlob(blob, csGetReportFileName());
+    if (typeof window.print !== 'function') return false;
+    window.print();
     return true;
   } catch (err) {
-    console.warn('Simple fallback PDF failed.', err);
+    console.warn('Print fallback failed.', err);
     return false;
   }
 }
@@ -12391,6 +12441,14 @@ function csReportGeneratedDate() {
 }
 
 function csReportScoreBreakdown() {
+  const debriefModel = csGetDebriefModel();
+  if (debriefModel) {
+    return {
+      score: Number(debriefModel.totalScore) || 0,
+      scoreTotal: Number(debriefModel.maxScore) || 100
+    };
+  }
+
   const scoreResult = csGetWeightedScoreResult();
   if (scoreResult) {
     return {
@@ -12426,6 +12484,23 @@ function csReportScoreBreakdown() {
 }
 
 function csReportRubricRows() {
+  const debriefModel = csGetDebriefModel();
+  if (debriefModel && Array.isArray(debriefModel.rubricRows)) {
+    return debriefModel.rubricRows.map((row) => {
+      const score = Number(row.score) || 0;
+      const maxScore = Number(row.maxScore) || 0;
+      let scoreColor = 'amber';
+      if (score <= 0) scoreColor = 'red';
+      else if (maxScore > 0 && score >= maxScore) scoreColor = 'green';
+      return {
+        criterion: csReportPlainText(row.criterion || 'Category') || 'Category',
+        response: csReportPlainText(row.note || 'No response') || 'No response',
+        score: `${score}/${maxScore}`,
+        score_color: scoreColor
+      };
+    });
+  }
+
   const scoreResult = csGetWeightedScoreResult();
   if (scoreResult && Array.isArray(scoreResult.detailedFeedback)) {
     return scoreResult.detailedFeedback.map((row) => {
@@ -12563,51 +12638,61 @@ function csReportExpertSections() {
 function csBuildReportDataPayload() {
   const c = csState.case;
   if (!c) return null;
+  const debriefModel = csGetDebriefModel();
+  if (!debriefModel) return null;
 
-  const level = String(csState.level || '').trim();
-  const levelTitle = level ? `${level.charAt(0).toUpperCase()}${level.slice(1)} Template` : 'Case Simulation';
-  const levelUpper = level ? level.toUpperCase() : '';
-  const regionUpper = csReportPlainText(c.region || '').toUpperCase();
+  const level = String(debriefModel.caseLevel || csState.level || '').trim().toLowerCase();
+  const levelLabel = debriefModel.caseLevelLabel || csCaseLevelLabel(level);
+  const levelTitle = levelLabel ? `${levelLabel} Template` : 'Case Simulation';
+  const levelUpper = levelLabel ? levelLabel.toUpperCase() : '';
+  const regionUpper = csReportPlainText(debriefModel.caseRegion || c.region || '').toUpperCase();
   const caseMatch = csReportPlainText(c.title || '').match(/case\s*([0-9]{2})/i) || String(c.id || '').match(/([0-9]{2})$/);
   const caseToken = caseMatch ? `CASE ${caseMatch[1]}` : '';
   const breadcrumb = [regionUpper, levelUpper, caseToken].filter(Boolean).join(' · ');
-  const scoreResult = csGetWeightedScoreResult();
-  const scoreData = csReportScoreBreakdown();
-  const rubricRows = csReportRubricRows();
   const correctDx = csSplitDiagnosisForReport(c.correctDx || '');
-  const verdictTitle = csReportPlainText(document.getElementById('csVerdict')?.textContent || '');
-  const verdictSubtitle = csReportPlainText(document.getElementById('csVerdictSub')?.textContent || '');
-  const scoreBreakdown = scoreResult && Array.isArray(scoreResult.breakdown)
-    ? scoreResult.breakdown.map((row) => ({
-        key: row.key || '',
-        label: csReportPlainText(row.label || 'Category') || 'Category',
-        score: Number(row.score) || 0,
-        max_score: Number(row.maxScore) || 0,
-        note: csReportPlainText(row.note || '')
-      }))
-    : [];
+  const scoreBreakdown = (debriefModel.categoryScores || []).map((row) => ({
+    key: row.key || '',
+    label: csReportPlainText(row.label || 'Category') || 'Category',
+    score: Number(row.score) || 0,
+    max_score: Number(row.maxScore) || 0,
+    note: csReportPlainText(row.note || '')
+  }));
   const reasoningSummary = csReportPlainText(
-    (scoreResult && scoreResult.feedbackSummary) || verdictSubtitle || 'Clinical reasoning summary.'
+    debriefModel.feedbackSummary || debriefModel.verdictSubtitle || 'Clinical reasoning summary.'
   ) || 'Clinical reasoning summary.';
-  const selectedDifferential = csWeightedCollectRankedDifferential().slice(0, 6).map(csReportPlainText).filter(Boolean);
-  const selectedTests = csWeightedUnique(
-    ((csState.revealed || []).map(r => r && r.name ? r.name : '')).concat(Array.from(csState.redHerringWasted || []))
-  ).map(csReportPlainText).filter(Boolean);
+  const selectedDifferential = (debriefModel.selectedDifferential || []).map(csReportPlainText).filter(Boolean);
+  const selectedTests = (debriefModel.selectedTests || []).map(csReportPlainText).filter(Boolean);
+  const rubricRows = (debriefModel.rubricRows || []).map((row) => {
+    const score = Number(row.score) || 0;
+    const maxScore = Number(row.maxScore) || 0;
+    let scoreColor = 'amber';
+    if (score <= 0) scoreColor = 'red';
+    else if (maxScore > 0 && score >= maxScore) scoreColor = 'green';
+    return {
+      criterion: csReportPlainText(row.criterion || 'Category') || 'Category',
+      response: csReportPlainText(row.note || 'No response') || 'No response',
+      score: `${score}/${maxScore}`,
+      score_color: scoreColor
+    };
+  });
+  const expertSections = Array.isArray(debriefModel.expertSections) && debriefModel.expertSections.length
+    ? debriefModel.expertSections
+    : csReportExpertSections();
 
   return {
     case_title: csReportPlainText(c.title || 'Clinical Case'),
     case_subtitle: levelTitle,
     case_breadcrumb: breadcrumb || csReportPlainText(c.title || 'Case Simulation').toUpperCase(),
     generated_date: csReportGeneratedDate(),
-    score: Number.isFinite(scoreData.score) ? scoreData.score : 0,
-    score_total: Number.isFinite(scoreData.scoreTotal) ? scoreData.scoreTotal : 0,
-    verdict_title: verdictTitle || 'Debrief',
+    score: Number.isFinite(debriefModel.totalScore) ? Number(debriefModel.totalScore) : 0,
+    score_total: Number.isFinite(debriefModel.maxScore) ? Number(debriefModel.maxScore) : 100,
+    verdict_title: csReportPlainText(debriefModel.verdictTitle || 'Debrief') || 'Debrief',
     verdict_subtitle: reasoningSummary,
-    user_diagnosis: csReportPlainText(csState.finalDx || '') || 'Not submitted',
+    user_diagnosis: csReportPlainText(debriefModel.diagnosisComparison && debriefModel.diagnosisComparison.userDiagnosis) || 'Not submitted',
     user_confidence: `${csConfidenceLabel(csState.confidence)} confidence ${Math.round(csClampConfidence(csState.confidence))}%`,
     correct_diagnosis: correctDx.title || csReportPlainText(c.correctDx || 'Not specified'),
     correct_diagnosis_sub: correctDx.sub || '',
-    differentials: (c.keyDifferentials || []).map(csReportPlainText).filter(Boolean).slice(0, 3),
+    differentials: (debriefModel.keyDifferentials || []).map(csReportPlainText).filter(Boolean).slice(0, 3),
     key_finding: csReportPlainText((c.keyFindings && c.keyFindings[0] && c.keyFindings[0].text) || '') || 'See key findings in debrief.',
     scoring_model_version: 'clinical-reasoning-v1',
     score_breakdown: scoreBreakdown,
@@ -12617,30 +12702,36 @@ function csBuildReportDataPayload() {
     rubric_rows: rubricRows,
     expert_diagnosis_title: correctDx.title || csReportPlainText(c.correctDx || 'Not specified'),
     expert_diagnosis_sub: correctDx.sub || '',
-    expert_sections: csReportExpertSections(),
+    expert_sections: expertSections,
     disclaimer: null
   };
 }
 
-window.__EIDOS_PDF_EXPORT_IMPL = 'api-case-export-v6-20260309';
+window.__EIDOS_PDF_EXPORT_IMPL = 'client-debrief-pdf-v2-20260309';
 window.__EIDOS_TRACE_PDF_EXPORT = function __EIDOS_TRACE_PDF_EXPORT() {
   const btn = document.getElementById('csPdfBtn');
   const shareBtn = document.getElementById('csShareBtn');
   const fnText = String(window.csExportPDF || '');
   const shareFnText = String(window.csShareReport || '');
-  const resolvedPdfApiUrl = csResolvePdfApiUrl();
   return {
     impl: window.__EIDOS_PDF_EXPORT_IMPL || '',
-    resolvedPdfApiUrl,
+    pipeline: 'client-debrief-dom-html2pdf',
+    usesApiEndpoint: false,
+    exportSourceSelector: '#pagCS6 .cs-page-inner',
+    hasHtml2PdfGlobal: !!window.html2pdf,
+    html2pdfStubDetected: csLooksLikeStubHtml2Pdf(window.html2pdf),
     buttonId: btn ? btn.id : null,
     buttonOnclickAttr: btn ? (btn.getAttribute('onclick') || '') : '',
     buttonDataClickAttr: btn ? (btn.getAttribute('data-click') || '') : '',
     shareButtonId: shareBtn ? shareBtn.id : null,
     shareButtonDataClickAttr: shareBtn ? (shareBtn.getAttribute('data-click') || '') : '',
-    hasApiFetchInFunction: fnText.includes('csResolvePdfApiUrl'),
-    hasApiFetchInShareFunction: shareFnText.includes('csResolvePdfApiUrl'),
+    hasApiFetchInFunction: fnText.includes('/api/case/export-pdf'),
+    hasApiFetchInShareFunction: shareFnText.includes('/api/case/export-pdf'),
     hasLegacyWindowPrintInFunction: fnText.includes('window.print'),
-    hasLegacyHtml2PdfInShareFunction: shareFnText.includes('csGenerateDebriefPdfBlob('),
+    hasHtml2PdfInFunction: fnText.includes('csGenerateDebriefPdfBlob('),
+    hasHtml2PdfInShareFunction: shareFnText.includes('csGenerateDebriefPdfBlob('),
+    usesSimpleTextFallbackInFunction: fnText.includes('csDownloadSimpleFallbackPdf('),
+    usesSimpleTextFallbackInShareFunction: shareFnText.includes('csDownloadSimpleFallbackPdf('),
     scriptFile: Array.from(document.querySelectorAll('script[src]')).map(s => s.getAttribute('src'))
   };
 };
@@ -12668,29 +12759,9 @@ async function csShareReport() {
       _showToast('Expert reasoning is still loading. Exporting current report.', 2200);
     }
 
-    const payload = csBuildReportDataPayload();
-    if (!payload) throw new Error('pdf_payload_unavailable');
-    const pdfApiUrl = csResolvePdfApiUrl();
-
-    const response = await csWithTimeout(
-      fetch(pdfApiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }),
-      22000,
-      'pdf_api_timeout'
-    );
-    if (!response || !response.ok) {
-      const status = response ? response.status : 'no_response';
-      throw new Error(`pdf_api_${status}`);
-    }
-
-    const blob = await csWithTimeout(
-      response.blob(),
-      10000,
-      'pdf_blob_timeout'
-    );
+    const debriefModel = csGetDebriefModel();
+    if (!debriefModel) throw new Error('pdf_payload_unavailable');
+    const blob = await csWithTimeout(csGenerateDebriefPdfBlob(), 24000, 'pdf_blob_timeout');
     if (!blob) throw new Error('pdf_blob_unavailable');
 
     const fileName = csGetReportFileName();
@@ -12726,19 +12797,15 @@ async function csShareReport() {
     const code = String((err && err.message) || '');
     if (code === 'share_sheet_timeout') {
       _showToast('Share sheet timed out. Try again.', 2800);
-    } else if ((window.location && window.location.protocol === 'file:') && (code.includes('Failed to fetch') || code.includes('NetworkError') || code.includes('Load failed'))) {
-      _showToast('Could not reach local PDF server at 127.0.0.1:8787. Start server/app.py and retry.', 3600);
-    } else if (code === 'pdf_api_timeout' || code === 'pdf_blob_timeout') {
-      _showToast('PDF service timed out. Please try again.', 2800);
-    } else if (code.startsWith('pdf_api_')) {
-      _showToast('PDF service unavailable right now. Please try again.', 2800);
+    } else if (code === 'pdf_blob_timeout') {
+      _showToast('PDF generation timed out. Please try again.', 2800);
     } else if (code === 'pdf_payload_unavailable') {
       _showToast('Could not build report payload. Please refresh and retry.', 2800);
     } else {
-      _showToast('Could not prepare report for sharing right now. Downloading local PDF…', 2600);
+      _showToast('Could not prepare report for sharing right now. Opening print dialog…', 2600);
     }
-    if (csDownloadSimpleFallbackPdf()) {
-      _showToast('Downloaded local PDF report.', 2200);
+    if (csOpenPrintDebriefFallback()) {
+      _showToast('Opened print dialog to save/share the current debrief PDF.', 2600);
     } else {
       _showToast('Could not generate report PDF right now.', 2600);
     }
@@ -12771,53 +12838,28 @@ async function csExportPDF() {
       _showToast('Expert reasoning is still loading. Exporting current report.', 2200);
     }
 
-    const payload = csBuildReportDataPayload();
-    if (!payload) throw new Error('pdf_payload_unavailable');
-    const pdfApiUrl = csResolvePdfApiUrl();
-
-    const response = await csWithTimeout(
-      fetch(pdfApiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }),
-      22000,
-      'pdf_api_timeout'
-    );
-    if (!response || !response.ok) {
-      const status = response ? response.status : 'no_response';
-      throw new Error(`pdf_api_${status}`);
-    }
-
-    const blob = await csWithTimeout(
-      response.blob(),
-      10000,
-      'pdf_blob_timeout'
-    );
+    const debriefModel = csGetDebriefModel();
+    if (!debriefModel) throw new Error('pdf_payload_unavailable');
+    const blob = await csWithTimeout(csGenerateDebriefPdfBlob(), 24000, 'pdf_blob_timeout');
     if (!blob) throw new Error('pdf_blob_unavailable');
 
-    csDownloadBlob(new Blob([blob], { type: 'application/pdf' }), csGetReportFileName());
+    csDownloadBlob(blob, csGetReportFileName());
     _showToast('PDF downloaded.', 1800);
   } catch (err) {
     console.warn('PDF export failed.', err);
     const code = String((err && err.message) || '');
-    if ((window.location && window.location.protocol === 'file:') && (code.includes('Failed to fetch') || code.includes('NetworkError') || code.includes('Load failed'))) {
-      _showToast('Could not reach local PDF server at 127.0.0.1:8787. Downloading local PDF fallback.', 3600);
-    } else
-    if (code === 'pdf_api_timeout' || code === 'pdf_blob_timeout') {
-      _showToast('PDF service timed out. Please try again.', 2600);
-    } else if (code.startsWith('pdf_api_')) {
-      _showToast('PDF service unavailable right now. Please try again.', 2600);
+    if (code === 'pdf_blob_timeout') {
+      _showToast('PDF generation timed out. Please try again.', 2600);
     } else if (code === 'pdf_payload_unavailable') {
       _showToast('Could not build report payload. Please refresh and retry.', 2600);
     } else {
-      _showToast('Could not export styled PDF right now. Downloading local PDF…', 2600);
+      _showToast('Could not export styled PDF right now. Opening print dialog…', 2600);
     }
-    if (csDownloadSimpleFallbackPdf()) {
-      _showToast('Downloaded local PDF report.', 2200);
-    } else {
-      _showToast('Could not generate PDF. Please try again.', 2600);
+    if (csOpenPrintDebriefFallback()) {
+      _showToast('Opened print dialog for PDF save.', 2400);
+      return;
     }
+    _showToast('Could not generate PDF. Please try again.', 2600);
   } finally {
     if (uiWatchdog) clearTimeout(uiWatchdog);
     if (btn) { btn.textContent = originalLabel; btn.disabled = false; }
