@@ -1,4 +1,4 @@
-window.__EIDOS_BUILD = 'kit-uid-4625fa2552-r5';
+window.__EIDOS_BUILD = 'kit-uid-4625fa2552-r9';
 window.__EIDOS_FILE = '/Users/brettpugh/Desktop/eidos/index.html';
 
 // ══════════════════════════════════════════
@@ -9175,20 +9175,23 @@ function csGoTo(pageId) {
 }
 
 function csSaveFieldState() {
-  const get = id => { const el = document.getElementById(id); return el ? el.value : ''; };
-  csState.ddx1 = get('csDdx1');
-  csState.ddx2 = get('csDdx2');
-  csState.ddx3 = get('csDdx3');
-  csState.reasoning1 = get('csReasoning1');
-  csState.updDdx1 = get('csUpdDdx1');
-  csState.updDdx2 = get('csUpdDdx2');
-  csState.updDdx3 = get('csUpdDdx3');
-  csState.reasoning2 = get('csReasoning2');
-  csState.finalDx = get('csFinalDx');
-  csState.finalReasoning = get('csFinalReasoning');
-  csState.management = get('csManagement');
-  csState.imagingSuggestion = get('csImagingSuggestion');
-  csState.confidence = csClampConfidence(get('csConfidence'));
+  const get = (id, fallback) => {
+    const el = document.getElementById(id);
+    return el ? el.value : fallback;
+  };
+  csState.ddx1 = get('csDdx1', csState.ddx1 || '');
+  csState.ddx2 = get('csDdx2', csState.ddx2 || '');
+  csState.ddx3 = get('csDdx3', csState.ddx3 || '');
+  csState.reasoning1 = get('csReasoning1', csState.reasoning1 || '');
+  csState.updDdx1 = get('csUpdDdx1', csState.updDdx1 || '');
+  csState.updDdx2 = get('csUpdDdx2', csState.updDdx2 || '');
+  csState.updDdx3 = get('csUpdDdx3', csState.updDdx3 || '');
+  csState.reasoning2 = get('csReasoning2', csState.reasoning2 || '');
+  csState.finalDx = get('csFinalDx', csState.finalDx || '');
+  csState.finalReasoning = get('csFinalReasoning', csState.finalReasoning || '');
+  csState.management = get('csManagement', csState.management || '');
+  csState.imagingSuggestion = get('csImagingSuggestion', csState.imagingSuggestion || '');
+  csState.confidence = csClampConfidence(get('csConfidence', csState.confidence));
 }
 
 const CS_MOBILE_DDX_INPUT_IDS = [
@@ -11578,8 +11581,9 @@ function csRenderDebriefFromModel(c, model) {
   }
 }
 
-async function csGenerateDebrief() {
-  csSaveFieldState();
+async function csGenerateDebrief(options) {
+  const cfg = options || {};
+  if (!cfg.skipFieldCapture) csSaveFieldState();
   csGoTo('pagCS6');
   csClearPdfBlobCache();
 
@@ -11597,6 +11601,7 @@ async function csGenerateDebrief() {
   const debriefModel = csBuildDebriefModel(c, scoreResult);
   csState.lastDebriefModel = debriefModel;
   csRenderDebriefFromModel(c, debriefModel);
+  saveToStorage();
 
   // ── AI feedback via Claude API ──
   const aiFeedback = document.getElementById('csAiFeedback');
@@ -11704,6 +11709,7 @@ Requirements:
   csState.attemptSummary = csBuildAttemptSummary(true);
   csPrewarmDebriefPdfBlob();
   csUpdateChallengeControls();
+  saveToStorage();
 }
 
 // ======== SESSION PERSISTENCE ========
@@ -11914,6 +11920,10 @@ function loadFromStorage() {
       const target = document.getElementById(activeCsPage);
       if (target) target.classList.add('active');
 
+      // Restore text inputs before any debrief regeneration so field capture
+      // does not overwrite restored state with empty defaults on refresh.
+      _restoreCsFields();
+
       // Re-render page content
       if (csState.case) {
         updateDdxDatalistForCase(csState.case);
@@ -11921,11 +11931,9 @@ function loadFromStorage() {
         if (activeCsPage === 'pagCS3') csRenderExamination();
         if (activeCsPage === 'pagCS4') csRenderRevealedFindings();
         if (activeCsPage === 'pagCS5') csRenderRedFlags();
-        if (activeCsPage === 'pagCS6') csGenerateDebrief();
+        if (activeCsPage === 'pagCS6') csGenerateDebrief({ skipFieldCapture: true });
       }
 
-      // Restore text inputs
-      _restoreCsFields();
       csUpdateChallengeControls();
       syncHeaderPostCollect();
       return true;
@@ -12364,6 +12372,46 @@ function csBuildPdfBlobCacheKey(model) {
   return [caseKey, scoreKey, summaryKey, expertKey.length].join('|');
 }
 
+function csIsMobileLikeDevice() {
+  return /iPhone|iPad|iPod|Android/i.test(String(navigator.userAgent || '')) ||
+    (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1);
+}
+
+function csBuildPdfRenderProfile() {
+  const mobile = csIsMobileLikeDevice();
+  const aiLen = String(csState.aiFeedbackHtml || '').length;
+  if (mobile && aiLen > 4500) {
+    return {
+      profileKey: 'mobile-dense-v1',
+      timeoutMs: 90000,
+      html2canvasScale: 1.15,
+      imageQuality: 0.9
+    };
+  }
+  if (mobile) {
+    return {
+      profileKey: 'mobile-standard-v1',
+      timeoutMs: 70000,
+      html2canvasScale: 1.3,
+      imageQuality: 0.92
+    };
+  }
+  if (aiLen > 4500) {
+    return {
+      profileKey: 'desktop-dense-v1',
+      timeoutMs: 90000,
+      html2canvasScale: 1.6,
+      imageQuality: 0.94
+    };
+  }
+  return {
+    profileKey: 'desktop-standard-v1',
+    timeoutMs: 60000,
+    html2canvasScale: 2,
+    imageQuality: 0.98
+  };
+}
+
 function csClearPdfBlobCache() {
   csState.pdfBlobCache = null;
   csState.pdfBlobCacheKey = '';
@@ -12383,7 +12431,8 @@ async function csGetOrBuildDebriefPdfBlob(options) {
   const timeoutMs = Number.isFinite(Number(cfg.timeoutMs)) ? Number(cfg.timeoutMs) : 24000;
   const debriefModel = csGetDebriefModel();
   if (!debriefModel) throw new Error('pdf_payload_unavailable');
-  const cacheKey = csBuildPdfBlobCacheKey(debriefModel);
+  const renderProfileKey = String((cfg.renderOptions && cfg.renderOptions.profileKey) || '');
+  const cacheKey = `${csBuildPdfBlobCacheKey(debriefModel)}|${renderProfileKey}`;
 
   if (!force && cacheKey && csState.pdfBlobCache && csState.pdfBlobCacheKey === cacheKey) {
     return csState.pdfBlobCache;
@@ -12393,7 +12442,7 @@ async function csGetOrBuildDebriefPdfBlob(options) {
   }
 
   const promise = (async () => {
-    const blob = await csWithTimeout(csGenerateDebriefPdfBlob(), timeoutMs, 'pdf_blob_timeout');
+    const blob = await csWithTimeout(csGenerateDebriefPdfBlob(cfg.renderOptions), timeoutMs, 'pdf_blob_timeout');
     if (!blob) throw new Error('pdf_blob_unavailable');
     if (cacheKey) {
       csState.pdfBlobCache = blob;
@@ -12581,10 +12630,17 @@ function csBuildDebriefExportNode() {
   return wrap;
 }
 
-async function csGenerateDebriefPdfBlob() {
+async function csGenerateDebriefPdfBlob(options) {
   csAssertPdfExportLock('generate_pdf_blob');
   const exportNode = csBuildDebriefExportNode();
   if (!exportNode) return null;
+  const cfg = options || {};
+  const html2canvasScale = Number.isFinite(Number(cfg.html2canvasScale))
+    ? Math.max(1, Math.min(2, Number(cfg.html2canvasScale)))
+    : 2;
+  const imageQuality = Number.isFinite(Number(cfg.imageQuality))
+    ? Math.max(0.7, Math.min(0.99, Number(cfg.imageQuality)))
+    : 0.98;
 
   const host = document.createElement('div');
   // Keep the node off-screen but renderable for html2canvas across mobile browsers.
@@ -12599,9 +12655,9 @@ async function csGenerateDebriefPdfBlob() {
     const worker = window.html2pdf().set({
       margin: [8, 8, 8, 8],
       filename: csGetReportFileName(),
-      image: { type: 'jpeg', quality: 0.98 },
+      image: { type: 'jpeg', quality: imageQuality },
       html2canvas: {
-        scale: 2,
+        scale: html2canvasScale,
         useCORS: true,
         backgroundColor: '#ffffff',
         logging: false,
@@ -13027,33 +13083,35 @@ async function csShareReport() {
 
   const btn = document.getElementById('csShareBtn');
   const originalLabel = btn ? btn.textContent : 'Share report';
-  const canNativeShare = !!navigator.share;
-  const shareBase = {
+  const sharePayload = {
     title: 'EIDOS Clinical Case Report',
-    text: `Clinical Case Simulation report: ${c.title}`
+    text: `Clinical Case Simulation report: ${c.title}`,
+    url: window.location.href
   };
-  const fileName = csGetReportFileName();
-  let blob = null;
-
-  const canUseNativeFileShare = (() => {
-    if (!canNativeShare || typeof File === 'undefined') return false;
-    if (typeof navigator.canShare !== 'function') return true;
+  const shareTextFallback = `${sharePayload.title}\n${sharePayload.text}\n${sharePayload.url}`;
+  const copyShareTextFallback = async () => {
     try {
-      const probe = new File(['eidos'], 'eidos-share-check.txt', { type: 'text/plain' });
-      return !!navigator.canShare({ files: [probe] });
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(shareTextFallback);
+        return true;
+      }
+    } catch (_) {}
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = shareTextFallback;
+      ta.setAttribute('readonly', 'readonly');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      ta.style.top = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, ta.value.length);
+      const copied = document.execCommand('copy');
+      ta.remove();
+      return !!copied;
     } catch (_) {
       return false;
     }
-  })();
-
-  const tryUrlShare = async () => {
-    if (!canNativeShare) return false;
-    await csWithTimeout(
-      navigator.share({ ...shareBase, url: window.location.href }),
-      15000,
-      'share_sheet_timeout'
-    );
-    return true;
   };
 
   let uiWatchdog = null;
@@ -13068,88 +13126,33 @@ async function csShareReport() {
   }
 
   try {
-    if (canNativeShare && !canUseNativeFileShare) {
-      try {
-        await tryUrlShare();
-        return;
-      } catch (shareErr) {
-        if (shareErr && shareErr.name === 'AbortError') {
-          _showToast('Share canceled.', 1600);
-          return;
-        }
-      }
-    }
-
-    if (!csHasCachedDebriefPdfBlob()) {
-      const waitState = await csWaitForDebriefReady(7000);
-      if (waitState && waitState.timedOut) {
-        _showToast('Expert reasoning is still loading. Exporting current report.', 2200);
-      }
-    }
-
-    blob = await csGetOrBuildDebriefPdfBlob({ timeoutMs: 24000 });
-
-    const canMakeFile = (typeof File !== 'undefined');
-    const file = canMakeFile ? new File([blob], fileName, { type: 'application/pdf' }) : null;
-    const canShareFile = !!(canNativeShare && file && (!navigator.canShare || navigator.canShare({ files: [file] })));
-
-    if (canShareFile) {
-      await csWithTimeout(navigator.share({ ...shareBase, files: [file] }), 15000, 'share_sheet_timeout');
+    if (navigator.share) {
+      await csWithTimeout(navigator.share(sharePayload), 15000, 'share_sheet_timeout');
       return;
     }
-
-    if (canNativeShare) {
-      try {
-        await tryUrlShare();
-        return;
-      } catch (shareErr) {
-        if (shareErr && shareErr.name === 'AbortError') {
-          _showToast('Share canceled.', 1600);
-          return;
-        }
-      }
-    }
-
-    if (canNativeShare) {
-      _showToast('Could not open share sheet. Use Save as PDF if needed.', 3000);
+    const copied = await copyShareTextFallback();
+    if (copied) {
+      _showToast('Share link copied. Paste to share.', 2400);
       return;
     }
-
-    csDownloadBlob(blob, fileName);
-    _showToast('Report downloaded. Use your share menu to send it.', 3200);
+    _showToast('Sharing unavailable. Use Save as PDF.', 2800);
   } catch (err) {
     if (err && err.name === 'AbortError') {
       _showToast('Share canceled.', 1600);
       return;
     }
-    console.warn('Share report failed.', err);
     const code = String((err && err.message) || '');
     if (code === 'share_sheet_timeout') {
       _showToast('Share sheet timed out. Try again.', 2800);
-    } else if (code === 'pdf_blob_timeout') {
-      _showToast('PDF generation timed out. Please try again.', 2800);
-    } else if (code === 'pdf_payload_unavailable') {
-      _showToast('Could not build report payload. Please refresh and retry.', 2800);
     } else {
-      _showToast('Could not prepare report for sharing right now.', 2600);
+      _showToast('Could not open share sheet. Use Save as PDF if needed.', 2800);
     }
-    if (canNativeShare) {
-      try {
-        await tryUrlShare();
-        return;
-      } catch (shareErr) {
-        if (shareErr && shareErr.name === 'AbortError') {
-          _showToast('Share canceled.', 1600);
-          return;
-        }
-      }
-    }
-    if (!canNativeShare && blob) {
-      csDownloadBlob(blob, fileName);
-      _showToast('Report downloaded. Use your share menu to send it.', 3200);
+    const copied = await copyShareTextFallback();
+    if (copied) {
+      _showToast('Share link copied. Paste to share.', 2600);
       return;
     }
-    _showToast('Share is unavailable right now. Use Save as PDF.', 2800);
+    console.warn('Share report failed.', err);
   } finally {
     if (uiWatchdog) clearTimeout(uiWatchdog);
     if (btn) { btn.textContent = originalLabel; btn.disabled = false; }
@@ -13160,6 +13163,9 @@ async function csExportPDF() {
   const c = csState.case;
   if (!c) return;
   csAssertPdfExportLock('export_pdf');
+  const renderProfile = csBuildPdfRenderProfile();
+  const exportTimeoutMs = Number(renderProfile.timeoutMs) || 60000;
+  const watchdogMs = Math.max(exportTimeoutMs + 4000, 32000);
 
   const btn = document.getElementById('csPdfBtn');
   const originalLabel = btn ? btn.textContent : 'Save as PDF';
@@ -13171,7 +13177,7 @@ async function csExportPDF() {
       btn.textContent = originalLabel;
       btn.disabled = false;
       _showToast('PDF export timed out. Try again.', 2400);
-    }, 28000);
+    }, watchdogMs);
   }
 
   try {
@@ -13182,7 +13188,10 @@ async function csExportPDF() {
       }
     }
 
-    const blob = await csGetOrBuildDebriefPdfBlob({ timeoutMs: 24000 });
+    const blob = await csGetOrBuildDebriefPdfBlob({
+      timeoutMs: exportTimeoutMs,
+      renderOptions: renderProfile
+    });
 
     csDownloadBlob(blob, csGetReportFileName());
     _showToast('PDF downloaded.', 1800);
