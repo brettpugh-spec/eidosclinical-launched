@@ -26,7 +26,7 @@
 <meta name="twitter:description" content="Clinical intelligence for MSK — differential diagnosis, clinical case simulation, and patient-facing assessment guidance." />
 <meta name="twitter:image" content="https://eidos.health/og-image.png" />
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/app.css?v=20260308-1">
+<link rel="stylesheet" href="assets/app.css?v=20260309-2">
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-3N26ED0PYE"></script>
 <script>
@@ -627,6 +627,9 @@
       <button class="chip" data-click="csSetFilter('level', 'intermediate', this)">Intermediate</button>
       <button class="chip" data-click="csSetFilter('level', 'advanced', this)">Advanced</button>
     </div>
+    <div class="cs-pool-status" id="csPoolStatus" aria-live="polite">0 matching cases available</div>
+    <div class="cs-pool-progress" id="csPoolProgress" aria-live="polite"></div>
+    <div class="cs-pool-empty" id="csPoolEmptyMsg" aria-live="polite"></div>
     <div class="btn-row" style="margin-top:32px; justify-content: space-between;">
       <button class="btn btn-secondary" data-click="closeCaseStudies()">&#8592; Exit</button>
       <button class="btn btn-primary" id="csStartRandomBtn" data-click="csStartFilteredCase()">Start Random Case &#8594;</button>
@@ -867,6 +870,7 @@
 <div id="eidos-toast" role="status" aria-live="polite"></div>
 
 <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script>
-<script src="assets/app.d7f29f3ea888.js"></script>
+<script src="cases/case-library.js"></script>
+<script src="assets/app.js"></script>
 </body>
 </html>

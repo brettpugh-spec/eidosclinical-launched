@@ -28,7 +28,8 @@ from __future__ import annotations
 
 import io
 import math
-from typing import List, Literal, Optional, TypedDict
+from typing import Any, List, Literal, Optional, TypedDict
+from xml.sax.saxutils import escape as xml_escape
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT, TA_RIGHT
@@ -62,6 +63,17 @@ SCORE_COLOURS: dict[str, colors.Color] = {
     "red":   RED_MISS,
 }
 
+# Reused paragraph styles (constant style definitions; no visual change)
+RUBRIC_CRITERION_STYLE = ParagraphStyle(
+    "rc", fontName="Helvetica", fontSize=7, textColor=TEXT_MAIN, leading=10
+)
+RUBRIC_RESPONSE_STYLE = ParagraphStyle(
+    "rr", fontName="Helvetica", fontSize=7, textColor=TEXT_MUTED, leading=10
+)
+EXPERT_BODY_STYLE = ParagraphStyle(
+    "eb", fontName="Helvetica", fontSize=8, textColor=TEXT_MAIN, leading=12.5, leftIndent=10
+)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DATA CONTRACT
@@ -72,6 +84,14 @@ class RubricRow(TypedDict):
     response:     str                          # REQUIRED — user's submitted response text
     score:        str                          # REQUIRED — display string e.g. "2/3", "0/2"
     score_color:  Literal["green","amber","red"]  # REQUIRED
+
+
+class ScoreBreakdownRow(TypedDict):
+    key:        str
+    label:      str
+    score:      int
+    max_score:  int
+    note:       str
 
 
 class ExpertSection(TypedDict):
@@ -101,13 +121,13 @@ class ReportData(TypedDict):
     correct_diagnosis:      str      # REQUIRED  e.g. "Cervical Radicular Pain"
     correct_diagnosis_sub:  str      # OPTIONAL  e.g. "(suspected)"
 
-    # ── Key differentials (shown as 3-column pills) ───────────────────────────
-    differentials:     List[str]     # REQUIRED  exactly 3 strings recommended
+    # ── Weighted scoring breakdown ────────────────────────────────────────────
+    score_breakdown:   List[ScoreBreakdownRow]  # OPTIONAL preferred when available
+    reasoning_summary: str                      # OPTIONAL short clinical reasoning summary
+    selected_differential: List[str]            # OPTIONAL learner-selected differential list
+    selected_tests:     List[str]               # OPTIONAL learner-selected tests list
 
-    # ── Key discriminating finding (single highlight row) ─────────────────────
-    key_finding:       str           # REQUIRED
-
-    # ── Reasoning rubric table ────────────────────────────────────────────────
+    # ── Rubric compatibility fallback ─────────────────────────────────────────
     rubric_rows:       List[RubricRow]  # REQUIRED
 
     # ── Page 2 expert reasoning ───────────────────────────────────────────────
@@ -133,6 +153,84 @@ def _resolve_color(value: str) -> colors.Color:
     if value in named:
         return named[value]
     return colors.HexColor(value)
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_text(value: Any, fallback: str = "") -> str:
+    if value is None:
+        return fallback
+    text = str(value).strip()
+    return text if text else fallback
+
+
+def _safe_text_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        text = _safe_text(item, "")
+        if text:
+            out.append(text)
+    return out
+
+
+def _score_color_from_values(score: int, max_score: int) -> Literal["green", "amber", "red"]:
+    if score <= 0:
+        return "red"
+    if max_score > 0 and score >= max_score:
+        return "green"
+    return "amber"
+
+
+def _build_scoring_rows(d: ReportData) -> list[RubricRow]:
+    rows: list[RubricRow] = []
+    breakdown_rows = d.get("score_breakdown") if isinstance(d.get("score_breakdown"), list) else []
+
+    for item in breakdown_rows or []:
+        if not isinstance(item, dict):
+            continue
+        label = _safe_text(item.get("label") or item.get("key"), "Category")
+        note = _safe_text(item.get("note"), "No additional feedback.")
+        score = max(0, _safe_int(item.get("score"), 0))
+        max_score = max(0, _safe_int(item.get("max_score"), 0))
+        score_txt = f"{score}/{max_score}"
+        rows.append(
+            {
+                "criterion": label,
+                "response": note,
+                "score": score_txt,
+                "score_color": _score_color_from_values(score, max_score),
+            }
+        )
+
+    if rows:
+        return rows
+
+    for row in d.get("rubric_rows", []):
+        if not isinstance(row, dict):
+            continue
+        score_txt = _safe_text(row.get("score"), "0/0")
+        bits = score_txt.replace(" ", "").split("/")
+        score = _safe_int(bits[0], 0) if bits else 0
+        max_score = _safe_int(bits[1], 0) if len(bits) > 1 else 0
+        color = row.get("score_color")
+        if color not in SCORE_COLOURS:
+            color = _score_color_from_values(score, max_score)
+        rows.append(
+            {
+                "criterion": _safe_text(row.get("criterion"), "Category"),
+                "response": _safe_text(row.get("response"), "No response"),
+                "score": score_txt,
+                "score_color": color,
+            }
+        )
+    return rows
 
 
 def _rounded_rect(
@@ -258,49 +356,63 @@ def _footer(c: canvas.Canvas, margin: float, page_label: str) -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _render_page1(c: canvas.Canvas, d: ReportData, margin: float) -> None:
-    """Page 1: Score hero, diagnosis comparison, differentials, rubric."""
-    cw = W - 2 * margin  # usable content width
+    """Page 1: Score hero, diagnosis comparison, weighted breakdown, and summary."""
+    cw = W - 2 * margin
 
-    # Background
     c.setFillColor(DARK_BG)
     c.rect(0, 0, W, H, fill=1, stroke=0)
 
     _header_bar(c, margin, "CASE SIMULATION REPORT", d["generated_date"])
 
     header_h = 52
-    y = H - header_h - 10  # cursor starts just below header
+    y = H - header_h - 10
 
     # ── Case breadcrumb + title ───────────────────────────────────────────────
     c.saveState()
     c.setFont("Helvetica", 7)
     c.setFillColor(ACCENT)
     c.drawString(margin, y - 14, d["case_breadcrumb"])
+    c.restoreState()
+    title_h = _para(
+        c,
+        xml_escape(_safe_text(d.get("case_title"), "Clinical Case")),
+        margin,
+        y - 20,
+        width=cw - 170,
+        size=14,
+        color=TEXT_MAIN,
+        leading=16,
+    )
+    c.saveState()
     c.setFont("Helvetica", 10)
     c.setFillColor(TEXT_MUTED)
-    c.drawString(margin, y - 36, d["case_subtitle"])
+    c.drawString(margin, y - title_h - 24, d["case_subtitle"])
     c.restoreState()
 
     # ── Score ring (top-right) ────────────────────────────────────────────────
     ring_cx = W - margin - 42
     ring_cy = y - 38
-    _score_ring(c, ring_cx, ring_cy, 28, d["score"], d["score_total"])
+    _score_ring(c, ring_cx, ring_cy, 28, _safe_int(d.get("score"), 0), _safe_int(d.get("score_total"), 100))
 
-    # Verdict label + subtitle beside the ring
-    verdict_x = ring_cx - 44  # right-edge of verdict text block
+    verdict_x = ring_cx - 44
     c.saveState()
     c.setFont("Helvetica-Bold", 10)
     c.setFillColor(AMBER)
-    c.drawRightString(verdict_x, ring_cy + 6, d["verdict_title"])
+    c.drawRightString(verdict_x, ring_cy + 6, _safe_text(d.get("verdict_title"), "Debrief"))
     c.restoreState()
     _para(
-        c, d["verdict_subtitle"],
-        verdict_x - 130, ring_cy - 4,
-        width=130, size=7.5, color=TEXT_MUTED,
-        leading=11, align=TA_RIGHT,
+        c,
+        xml_escape(_safe_text(d.get("verdict_subtitle"), "Clinical reasoning summary.")),
+        verdict_x - 130,
+        ring_cy - 4,
+        width=130,
+        size=7.5,
+        color=TEXT_MUTED,
+        leading=11,
+        align=TA_RIGHT,
     )
 
-    # Horizontal rule
-    rule_y = y - 68
+    rule_y = y - max(72, title_h + 30)
     c.setStrokeColor(BORDER)
     c.setLineWidth(0.5)
     c.line(margin, rule_y, W - margin, rule_y)
@@ -317,7 +429,6 @@ def _render_page1(c: canvas.Canvas, d: ReportData, margin: float) -> None:
     card_w = (cw - 8) / 2
     card_h = 56
 
-    # Your diagnosis card
     _rounded_rect(c, margin, y - card_h, card_w, card_h, r=3 * mm, fill=CARD_BG, stroke=BORDER)
     c.saveState()
     c.setFont("Helvetica", 6)
@@ -325,23 +436,27 @@ def _render_page1(c: canvas.Canvas, d: ReportData, margin: float) -> None:
     c.drawString(margin + 10, y - 12, "YOUR DIAGNOSIS")
     c.setFont("Helvetica-Bold", 9)
     c.setFillColor(AMBER)
-    # Split long diagnosis across up to 3 lines
-    diag_lines = _split_text(d["user_diagnosis"], 28)
+    diag_lines = _split_text(_safe_text(d.get("user_diagnosis"), "Not submitted"), 28)
     for li, ln in enumerate(diag_lines[:3]):
         c.drawString(margin + 10, y - 26 - li * 12, ln)
-    # Confidence pill
     pill_y = y - card_h + 6
-    _rounded_rect(c, margin + 10, pill_y, 84, 13, r=2 * mm, fill=colors.HexColor("#1e3547"))
+    _rounded_rect(c, margin + 10, pill_y, 98, 13, r=2 * mm, fill=colors.HexColor("#1e3547"))
     c.setFillColor(AMBER)
-    c.setFont("Helvetica", 6.5)
-    c.drawString(margin + 16, pill_y + 3, d["user_confidence"])
+    c.setFont("Helvetica", 6.3)
+    c.drawString(margin + 15, pill_y + 3, _safe_text(d.get("user_confidence"), "No confidence submitted"))
     c.restoreState()
 
-    # Correct diagnosis card
     cx2 = margin + card_w + 8
     _rounded_rect(
-        c, cx2, y - card_h, card_w, card_h, r=3 * mm,
-        fill=colors.HexColor("#0d2218"), stroke=GREEN_OK, lw=0.8,
+        c,
+        cx2,
+        y - card_h,
+        card_w,
+        card_h,
+        r=3 * mm,
+        fill=colors.HexColor("#0d2218"),
+        stroke=GREEN_OK,
+        lw=0.8,
     )
     c.saveState()
     c.setFont("Helvetica", 6)
@@ -349,73 +464,46 @@ def _render_page1(c: canvas.Canvas, d: ReportData, margin: float) -> None:
     c.drawString(cx2 + 10, y - 12, "CORRECT DIAGNOSIS")
     c.setFont("Helvetica-Bold", 9.5)
     c.setFillColor(GREEN_OK)
-    c.drawString(cx2 + 10, y - 26, d["correct_diagnosis"])
+    c.drawString(cx2 + 10, y - 26, _safe_text(d.get("correct_diagnosis"), "Not specified"))
     if d.get("correct_diagnosis_sub"):
         c.setFont("Helvetica", 8)
         c.setFillColor(TEXT_MUTED)
-        c.drawString(cx2 + 10, y - 39, d["correct_diagnosis_sub"])
+        c.drawString(cx2 + 10, y - 39, _safe_text(d.get("correct_diagnosis_sub"), ""))
     c.restoreState()
 
-    y -= card_h + 12
+    y -= card_h + 10
 
-    # ── Section: Key differentials ────────────────────────────────────────────
+    # ── Section: Clinical reasoning summary ───────────────────────────────────
     c.saveState()
     c.setFont("Helvetica", 6.5)
     c.setFillColor(TEXT_MUTED)
-    c.drawString(margin, y, "KEY DIFFERENTIALS TO CONSIDER")
-    c.restoreState()
-    y -= 14
-
-    diffs = d.get("differentials", [])
-    n = len(diffs) or 1
-    gap = 6
-    pill_w = (cw - gap * (n - 1)) / n
-    pill_h = 26
-    for i, diff_text in enumerate(diffs):
-        dx = margin + i * (pill_w + gap)
-        _rounded_rect(c, dx, y - pill_h, pill_w, pill_h, r=2.5 * mm, fill=CARD_BG, stroke=BORDER)
-        _para(c, diff_text, dx + 7, y - (pill_h - 8) / 2 - 2, pill_w - 14, size=7.5, color=TEXT_MAIN, leading=10)
-
-    y -= pill_h + 12
-
-    # ── Section: Key discriminating finding ───────────────────────────────────
-    c.saveState()
-    c.setFont("Helvetica", 6.5)
-    c.setFillColor(TEXT_MUTED)
-    c.drawString(margin, y, "KEY DISCRIMINATING FINDING")
-    c.restoreState()
-    y -= 14
-
-    finding_h = 30
-    _rounded_rect(
-        c, margin, y - finding_h, cw, finding_h, r=2.5 * mm,
-        fill=colors.HexColor("#0a1d2a"), stroke=ACCENT, lw=0.8,
-    )
-    c.saveState()
-    c.setFillColor(ACCENT)
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(margin + 9, y - 20, "✓")
-    c.setFont("Helvetica", 8)
-    c.setFillColor(TEXT_MAIN)
-    c.drawString(margin + 24, y - 20, d["key_finding"])
-    c.restoreState()
-    y -= finding_h + 12
-
-    # ── Section: Reasoning rubric ─────────────────────────────────────────────
-    c.saveState()
-    c.setFont("Helvetica", 6.5)
-    c.setFillColor(TEXT_MUTED)
-    c.drawString(margin, y, "REASONING RUBRIC")
+    c.drawString(margin, y, "CLINICAL REASONING SUMMARY")
     c.restoreState()
     y -= 12
 
-    row_h = 26
-    col_w = [cw * 0.30, cw * 0.55, cw * 0.15]
+    summary_text = _safe_text(d.get("reasoning_summary") or d.get("verdict_subtitle"), "Clinical reasoning summary.")
+    summary_style = ParagraphStyle("summary", fontName="Helvetica", fontSize=7.6, textColor=TEXT_MAIN, leading=10.5)
+    summary_p = Paragraph(xml_escape(summary_text), summary_style)
+    summary_p.wrapOn(c, cw - 16, 9999)
+    summary_h = max(26, summary_p.height + 12)
+    _rounded_rect(c, margin, y - summary_h, cw, summary_h, r=2.5 * mm, fill=CARD_BG, stroke=BORDER)
+    summary_p.drawOn(c, margin + 8, y - summary_h + (summary_h - summary_p.height) / 2)
+    y -= summary_h + 12
 
-    # Header row
+    # ── Section: Scoring breakdown ────────────────────────────────────────────
+    c.saveState()
+    c.setFont("Helvetica", 6.5)
+    c.setFillColor(TEXT_MUTED)
+    c.drawString(margin, y, "SCORING BREAKDOWN")
+    c.restoreState()
+    y -= 12
+
+    row_h = 24
+    col_w = [cw * 0.33, cw * 0.49, cw * 0.18]
+
     _rounded_rect(c, margin, y - row_h + 4, cw, row_h - 4, r=2 * mm, fill=BORDER)
     hx = margin
-    for hi, hdr in enumerate(["Criterion", "Your Response", "Score"]):
+    for hi, hdr in enumerate(["Category", "Feedback", "Score"]):
         c.saveState()
         c.setFont("Helvetica-Bold", 6.5)
         c.setFillColor(TEXT_MUTED)
@@ -427,39 +515,75 @@ def _render_page1(c: canvas.Canvas, d: ReportData, margin: float) -> None:
         hx += col_w[hi]
     y -= row_h
 
-    for ri, row in enumerate(d.get("rubric_rows", [])):
+    score_rows = _build_scoring_rows(d)
+    if not score_rows:
+        score_rows = [
+            {"criterion": "Differential Diagnosis", "response": "No score data available.", "score": "0/40", "score_color": "red"},
+            {"criterion": "Test Selection", "response": "No score data available.", "score": "0/25", "score_color": "red"},
+            {"criterion": "Red Flag Recognition", "response": "No score data available.", "score": "0/15", "score_color": "red"},
+            {"criterion": "Diagnostic Efficiency", "response": "No score data available.", "score": "0/20", "score_color": "red"},
+        ]
+
+    for ri, row in enumerate(score_rows[:8]):
+        p = Paragraph(xml_escape(_safe_text(row.get("criterion"), "Category")).replace("\n", "<br/>"), RUBRIC_CRITERION_STYLE)
+        p.wrapOn(c, col_w[0] - 12, 9999)
+        p2 = Paragraph(xml_escape(_safe_text(row.get("response"), "No response")), RUBRIC_RESPONSE_STYLE)
+        p2.wrapOn(c, col_w[1] - 12, 9999)
+        dynamic_h = max(24, p.height + 10, p2.height + 10)
+        if y - dynamic_h < 125:
+            break
+
         bg = CARD_BG if ri % 2 == 0 else CARD_ALT
-        _rounded_rect(c, margin, y - row_h, cw, row_h, r=0, fill=bg)
+        _rounded_rect(c, margin, y - dynamic_h, cw, dynamic_h, r=0, fill=bg)
 
         rx = margin
-        # Criterion
         c.saveState()
-        sty = ParagraphStyle("rc", fontName="Helvetica", fontSize=7, textColor=TEXT_MAIN, leading=10)
-        p = Paragraph(row["criterion"].replace("\n", "<br/>"), sty)
-        p.wrapOn(c, col_w[0] - 12, 9999)
-        p.drawOn(c, rx + 6, y - row_h + (row_h - p.height) / 2)
+        p.drawOn(c, rx + 6, y - dynamic_h + (dynamic_h - p.height) / 2)
         rx += col_w[0]
-        # Response
-        sty2 = ParagraphStyle("rr", fontName="Helvetica", fontSize=7, textColor=TEXT_MUTED, leading=10)
-        p2 = Paragraph(row["response"], sty2)
-        p2.wrapOn(c, col_w[1] - 12, 9999)
-        p2.drawOn(c, rx + 6, y - row_h + (row_h - p2.height) / 2)
+        p2.drawOn(c, rx + 6, y - dynamic_h + (dynamic_h - p2.height) / 2)
         rx += col_w[1]
-        # Score pill
-        sc = SCORE_COLOURS.get(row["score_color"], AMBER)
-        pw, ph = 28, 14
+
+        score_label = _safe_text(row.get("score"), "0/0")
+        sc = SCORE_COLOURS.get(_safe_text(row.get("score_color"), "amber"), AMBER)
+        pw = max(28, min(56, 12 + (len(score_label) * 4.2)))
+        ph = 14
         px = rx + col_w[2] - pw - 6
-        py = y - row_h / 2 - ph / 2
+        py = y - dynamic_h / 2 - ph / 2
         _rounded_rect(c, px, py, pw, ph, r=7, fill=colors.Color(sc.red, sc.green, sc.blue, alpha=0.2))
         c.setFillColor(sc)
         c.setFont("Helvetica-Bold", 8)
-        c.drawCentredString(px + pw / 2, py + 3.5, row["score"])
+        c.drawCentredString(px + pw / 2, py + 3.5, score_label)
         c.restoreState()
-        # Row divider
+
         c.setStrokeColor(BORDER)
         c.setLineWidth(0.3)
-        c.line(margin, y - row_h, W - margin, y - row_h)
-        y -= row_h
+        c.line(margin, y - dynamic_h, W - margin, y - dynamic_h)
+        y -= dynamic_h
+
+    y -= 8
+
+    selected_diff = _safe_text_list(d.get("selected_differential"))[:8]
+    selected_tests = _safe_text_list(d.get("selected_tests"))[:14]
+
+    def _draw_selection_block(label: str, items: list[str], empty_text: str, y_cursor: float) -> float:
+        c.saveState()
+        c.setFont("Helvetica", 6.5)
+        c.setFillColor(TEXT_MUTED)
+        c.drawString(margin, y_cursor, label)
+        c.restoreState()
+        y_cursor -= 12
+
+        body_text = ", ".join(items) if items else empty_text
+        body_style = ParagraphStyle("sel", fontName="Helvetica", fontSize=7.1, textColor=TEXT_MAIN, leading=10)
+        p_body = Paragraph(xml_escape(body_text), body_style)
+        p_body.wrapOn(c, cw - 16, 9999)
+        block_h = max(24, p_body.height + 12)
+        _rounded_rect(c, margin, y_cursor - block_h, cw, block_h, r=2 * mm, fill=CARD_BG, stroke=BORDER)
+        p_body.drawOn(c, margin + 8, y_cursor - block_h + (block_h - p_body.height) / 2)
+        return y_cursor - block_h - 8
+
+    y = _draw_selection_block("SELECTED DIFFERENTIAL", selected_diff, "No differential submitted.", y)
+    y = _draw_selection_block("SELECTED TESTS", selected_tests, "No tests selected.", y)
 
     _footer(c, margin, "Page 1 of 2")
 
@@ -527,11 +651,7 @@ def _render_page2(c: canvas.Canvas, d: ReportData, margin: float) -> None:
         y -= badge_r * 2 + 4
 
         # Body paragraph
-        sty = ParagraphStyle(
-            "eb", fontName="Helvetica", fontSize=8, textColor=TEXT_MAIN,
-            leading=12.5, leftIndent=10,
-        )
-        p = Paragraph(sec["body"], sty)
+        p = Paragraph(sec["body"], EXPERT_BODY_STYLE)
         p.wrapOn(c, cw - 10, 9999)
         p.drawOn(c, margin + 10, y - p.height)
         y -= p.height + 14
@@ -612,7 +732,7 @@ def generate_report(data: ReportData, output_path: str | None = None) -> bytes:
                             headers={"Content-Disposition": f"attachment; filename=eidos-case-{id}.pdf"})
     """
     buf = io.BytesIO()
-    c = canvas.Canvas(buf, pagesize=A4)
+    c = canvas.Canvas(buf, pagesize=A4, pageCompression=1)
     c.setTitle(f"EIDOS — {data.get('case_title', 'Case Report')}")
 
     margin = 18 * mm
@@ -641,60 +761,59 @@ SAMPLE_DATA: ReportData = {
     "case_breadcrumb":  "CERVICAL  ·  ADVANCED  ·  CASE 03",
     "generated_date":   "Generated  Mar 7, 2026",
 
-    "score":            5,
-    "score_total":      11,
+    "score":            74,
+    "score_total":      100,
     "verdict_title":    "Developing reasoning",
-    "verdict_subtitle": "You identified key features and are building strong pattern recognition.",
+    "verdict_subtitle": "You identified the correct diagnosis and used useful discriminating tests, with room to improve efficiency.",
+    "reasoning_summary": "You correctly identified the primary diagnosis. Your selected tests were mostly high-value, but two additional tests added limited value. You appropriately ruled out major red flags.",
 
     "user_diagnosis":       "Cervical Whiplash / Movement Coordination Impairment",
     "user_confidence":      "Moderate confidence  50%",
     "correct_diagnosis":    "Cervical Radicular Pain",
     "correct_diagnosis_sub": "(suspected)",
 
-    "differentials": [
-        "Alternative musculoskeletal pathology",
-        "Neural involvement",
-        "Referred pain source",
+    "score_breakdown": [
+        {"key": "differential", "label": "Differential Diagnosis", "score": 40, "max_score": 40, "note": "Correct diagnosis selected as primary."},
+        {"key": "tests", "label": "Test Selection", "score": 19, "max_score": 25, "note": "Selected tests were mostly discriminating for this case."},
+        {"key": "red_flags", "label": "Red Flag Recognition", "score": 15, "max_score": 15, "note": "Appropriately ruled out major red flags."},
+        {"key": "efficiency", "label": "Diagnostic Efficiency", "score": 0, "max_score": 20, "note": "Additional low-value tests reduced diagnostic efficiency."},
     ],
-
-    "key_finding": "Pattern recognition — symptoms and exam align with the intended presentation.",
+    "selected_differential": [
+        "Cervical Radicular Pain",
+        "Cervical Whiplash / Movement Coordination Impairment",
+        "Thoracic Outlet Syndrome",
+    ],
+    "selected_tests": [
+        "Cervical distraction test",
+        "Spurling's test",
+        "ULTT1 median nerve",
+        "Adson test",
+    ],
 
     "rubric_rows": [
         {
-            "criterion":   "Correct primary diagnosis\n(Cervical Radicular Pain)",
-            "response":    'Submitted: "Cervical Whiplash / MCI" — partial credit for commitment',
-            "score":       "2/3",
-            "score_color": "amber",
-        },
-        {
-            "criterion":   "Reasoning cites discriminating findings",
-            "response":    "No reasoning provided",
-            "score":       "0/2",
-            "score_color": "red",
-        },
-        {
-            "criterion":   "Initial differential includes plausible alternatives",
-            "response":    "Initial differential completed; refine for best-fit diagnosis",
-            "score":       "1/1",
+            "criterion":   "Differential Diagnosis",
+            "response":    "Correct diagnosis selected as primary.",
+            "score":       "40/40",
             "score_color": "green",
         },
         {
-            "criterion":   "Management appropriate to irritability & red flags",
-            "response":    "No management provided",
-            "score":       "0/2",
-            "score_color": "red",
+            "criterion":   "Test Selection",
+            "response":    "Selected tests were mostly discriminating for this case.",
+            "score":       "19/25",
+            "score_color": "amber",
         },
         {
-            "criterion":   "Red flag screening completed",
-            "response":    "3 flag(s) checked",
-            "score":       "1/1",
+            "criterion":   "Red Flag Recognition",
+            "response":    "Appropriately ruled out major red flags.",
+            "score":       "15/15",
             "score_color": "green",
         },
         {
-            "criterion":   "Imaging recommendation",
-            "response":    "No selection made — expected: Not at this time",
-            "score":       "1/2",
-            "score_color": "amber",
+            "criterion":   "Diagnostic Efficiency",
+            "response":    "Additional low-value tests reduced diagnostic efficiency.",
+            "score":       "0/20",
+            "score_color": "red",
         },
     ],
 

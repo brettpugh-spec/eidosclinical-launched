@@ -15,7 +15,7 @@ try:
 except OSError:
     TEMPLATE_SHA256 = "unavailable"
 TEMPLATE_ID = f"{TEMPLATE_PATH.name}@{TEMPLATE_SHA256[:12]}"
-GENERATOR_ID = "reportlab-template-v1"
+GENERATOR_ID = "reportlab-template-v2"
 
 
 @app.route("/api/case/export-pdf", methods=["POST", "OPTIONS"])

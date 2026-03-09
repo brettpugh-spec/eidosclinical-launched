@@ -654,6 +654,30 @@
     border-color: var(--accent);
     font-weight: 400;
   }
+  .cs-pool-status {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.7rem;
+    color: var(--muted2);
+    letter-spacing: 0.03em;
+    margin: -6px 0 2px;
+  }
+  .cs-pool-progress {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.68rem;
+    color: var(--accent);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin: 0 0 4px;
+  }
+  .cs-pool-empty {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.68rem;
+    color: var(--muted);
+    line-height: 1.5;
+    letter-spacing: 0.01em;
+    min-height: 1.1rem;
+    margin-bottom: 0;
+  }
 
   /* ── INPUTS ── */
   textarea, input[type="text"], input[type="number"] {

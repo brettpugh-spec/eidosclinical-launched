@@ -7920,6 +7920,7 @@ const csState = {
   examRowOrder: {},
   examRowOrderCaseKey: '',
   attemptSummary: null,
+  lastScoreResult: null,
 };
 
 const CS_CHALLENGE_ROUTE_PARAM = 'challenge';
@@ -10809,6 +10810,7 @@ function csResetSessionData() {
   csState.examRowOrder = {};
   csState.examRowOrderCaseKey = '';
   csState.attemptSummary = null;
+  csState.lastScoreResult = null;
   // Reset inputs
   ['csDdx1','csDdx2','csDdx3','csReasoning1','csUpdDdx1','csUpdDdx2','csUpdDdx3',
    'csReasoning2','csFinalDx','csFinalReasoning','csManagement','csImagingSuggestion'].forEach(id => {
@@ -13440,104 +13442,513 @@ function csBuildPatientReasoningFallback(c) {
     <p><strong>5. NEXT STEPS</strong> — ${escapeHtml(nextSteps)}</p>`;
 }
 
+const CS_WEIGHTED_SCORE_MODEL = Object.freeze({
+  differential: 40,
+  testSelection: 25,
+  redFlags: 15,
+  efficiency: 20
+});
+
+const CS_WEIGHTED_ESCALATION_TERMS = [
+  'urgent', 'immediate', 'emergency', 'same-day', 'refer', 'referral',
+  'non-weight-bearing', 'non weight bearing', 'crutches', 'mri', 'ct', 'x-ray'
+];
+
+function csWeightedNormalize(value) {
+  return String(value || '').toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+function csWeightedClamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function csWeightedList(list) {
+  return (Array.isArray(list) ? list : []).map(v => String(v || '').trim()).filter(Boolean);
+}
+
+function csWeightedUnique(list) {
+  const seen = new Set();
+  const out = [];
+  csWeightedList(list).forEach((value) => {
+    const key = csWeightedNormalize(value);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(value);
+  });
+  return out;
+}
+
+function csWeightedToSet(list) {
+  const out = new Set();
+  csWeightedList(list).forEach(v => out.add(csWeightedNormalize(v)));
+  return out;
+}
+
+function csWeightedDiagnosisMatches(input, aliases) {
+  const src = csWeightedNormalize(input);
+  if (!src || src.length < 3) return false;
+  return csWeightedList(aliases).some((alias) => {
+    const target = csWeightedNormalize(alias);
+    return target && (src.includes(target) || (target.includes(src) && src.length >= 4));
+  });
+}
+
+function csWeightedCollectRankedDifferential() {
+  return csWeightedUnique([
+    csState.finalDx,
+    csState.updDdx1, csState.updDdx2, csState.updDdx3,
+    csState.ddx1, csState.ddx2, csState.ddx3
+  ]);
+}
+
+function csWeightedBuildConfig(c) {
+  const raw = (c && c.scoring && typeof c.scoring === 'object') ? c.scoring : {};
+  const testsRaw = (raw.tests && typeof raw.tests === 'object') ? raw.tests : {};
+  const redFlagsRaw = (raw.redFlags && typeof raw.redFlags === 'object') ? raw.redFlags : {};
+  const efficiencyRaw = (raw.efficiency && typeof raw.efficiency === 'object') ? raw.efficiency : {};
+  const differentialRaw = (raw.differential && typeof raw.differential === 'object') ? raw.differential : {};
+
+  const defaultIdealMax = Math.min(5, Math.max(3, Number(csState.tokensTotal || 8) - 1));
+
+  return {
+    differential: {
+      maxPoints: CS_WEIGHTED_SCORE_MODEL.differential,
+      plausibleRelated: csWeightedList(differentialRaw.plausibleRelated || c.keyDifferentials || [])
+    },
+    tests: {
+      maxPoints: CS_WEIGHTED_SCORE_MODEL.testSelection,
+      keyTests: csWeightedList(testsRaw.keyTests),
+      supportiveTests: csWeightedList(testsRaw.supportiveTests),
+      neutralTests: csWeightedList(testsRaw.neutralTests),
+      irrelevantTests: csWeightedList(testsRaw.irrelevantTests),
+      points: {
+        key: Number.isFinite(Number(testsRaw.points && testsRaw.points.key)) ? Number(testsRaw.points.key) : 5,
+        supportive: Number.isFinite(Number(testsRaw.points && testsRaw.points.supportive)) ? Number(testsRaw.points.supportive) : 2,
+        neutral: Number.isFinite(Number(testsRaw.points && testsRaw.points.neutral)) ? Number(testsRaw.points.neutral) : 0,
+        irrelevantPenalty: Number.isFinite(Number(testsRaw.points && testsRaw.points.irrelevantPenalty)) ? Number(testsRaw.points.irrelevantPenalty) : 2,
+      }
+    },
+    redFlags: {
+      maxPoints: CS_WEIGHTED_SCORE_MODEL.redFlags,
+      mode: String(redFlagsRaw.mode || '').trim().toLowerCase(),
+      criticalFlags: csWeightedList(redFlagsRaw.criticalFlags || []),
+      escalationRequired: redFlagsRaw.escalationRequired !== false
+    },
+    efficiency: {
+      maxPoints: CS_WEIGHTED_SCORE_MODEL.efficiency,
+      idealMin: Number.isFinite(Number(efficiencyRaw.idealMin)) ? Number(efficiencyRaw.idealMin) : 3,
+      idealMax: Number.isFinite(Number(efficiencyRaw.idealMax)) ? Number(efficiencyRaw.idealMax) : defaultIdealMax,
+      softMax: Number.isFinite(Number(efficiencyRaw.softMax)) ? Number(efficiencyRaw.softMax) : Math.min(Number(csState.tokensTotal || 8), defaultIdealMax + 2),
+      underusePenalty: Number.isFinite(Number(efficiencyRaw.underusePenalty)) ? Number(efficiencyRaw.underusePenalty) : 3,
+      overusePenalty: Number.isFinite(Number(efficiencyRaw.overusePenalty)) ? Number(efficiencyRaw.overusePenalty) : 2,
+      excessivePenalty: Number.isFinite(Number(efficiencyRaw.excessivePenalty)) ? Number(efficiencyRaw.excessivePenalty) : 3,
+      irrelevantPenalty: Number.isFinite(Number(efficiencyRaw.irrelevantPenalty)) ? Number(efficiencyRaw.irrelevantPenalty) : 3
+    }
+  };
+}
+
+function csWeightedInferRedFlagMode(c, configuredMode) {
+  if (configuredMode === 'identify' || configuredMode === 'rule_out') return configuredMode;
+  const src = csWeightedNormalize(`${c && c.title ? c.title : ''} ${c && c.correctDx ? c.correctDx : ''} ${c && c.expertReasoningPrompt ? c.expertReasoningPrompt : ''}`);
+  const highRiskPattern = /(urgent|emergency|red flag|cauda equina|myelopathy|stress fracture|spinal cord compression|metastatic|mscc|fracture suspected|rupture suspected|surgical referral)/;
+  return highRiskPattern.test(src) ? 'identify' : 'rule_out';
+}
+
+function csWeightedBuildTestBuckets(c, testsCfg) {
+  const key = csWeightedToSet(testsCfg.keyTests);
+  const supportive = csWeightedToSet(testsCfg.supportiveTests);
+  const neutral = csWeightedToSet(testsCfg.neutralTests);
+  const irrelevant = csWeightedToSet(testsCfg.irrelevantTests);
+  const hasBucket = (name) => key.has(name) || supportive.has(name) || neutral.has(name) || irrelevant.has(name);
+
+  (c.examCategories || []).forEach((cat) => {
+    (cat && cat.items || []).forEach((item) => {
+      const name = csWeightedNormalize(item && item.name ? item.name : '');
+      if (!name || hasBucket(name)) return;
+      const valence = String(item && item.valence || '').toLowerCase();
+      if (valence === 'pos') key.add(name);
+      else if (valence === 'neg') supportive.add(name);
+      else neutral.add(name);
+    });
+  });
+
+  (c.additionalTests || []).forEach((item) => {
+    const name = csWeightedNormalize(item && item.name ? item.name : '');
+    if (!name || hasBucket(name)) return;
+    const valence = String(item && item.valence || '').toLowerCase();
+    if (valence === 'pos') key.add(name);
+    else if (valence === 'neg') supportive.add(name);
+    else neutral.add(name);
+  });
+
+  csWeightedList(csState.redHerringPool || []).forEach(name => irrelevant.add(csWeightedNormalize(name)));
+  return { key, supportive, neutral, irrelevant };
+}
+
+function csWeightedScoreDifferential(c, cfg) {
+  const maxPoints = cfg.differential.maxPoints;
+  const ranked = csWeightedCollectRankedDifferential();
+  const primaryDx = ranked[0] || '';
+  const correctAliases = csWeightedUnique([c.correctDx].concat(c.correctDxAliases || []));
+  const primaryCorrect = csWeightedDiagnosisMatches(primaryDx, correctAliases);
+  const includedIndex = ranked.findIndex(dx => csWeightedDiagnosisMatches(dx, correctAliases));
+  const plausibleAliases = csWeightedUnique((cfg.differential.plausibleRelated || []).concat(c.keyDifferentials || []));
+  const plausibleCount = ranked.filter(dx => csWeightedDiagnosisMatches(dx, plausibleAliases)).length;
+
+  if (primaryCorrect) {
+    return {
+      key: 'differential',
+      label: 'Differential Diagnosis',
+      score: maxPoints,
+      maxScore: maxPoints,
+      note: `Correct diagnosis selected as primary (${c.correctDx}).`,
+      details: { primaryCorrect: true, includedIndex: 0, plausibleCount: plausibleCount, ranked: ranked }
+    };
+  }
+  if (includedIndex >= 0) {
+    return {
+      key: 'differential',
+      label: 'Differential Diagnosis',
+      score: 25,
+      maxScore: maxPoints,
+      note: 'Correct diagnosis included in your differential but not ranked first.',
+      details: { primaryCorrect: false, includedIndex: includedIndex, plausibleCount: plausibleCount, ranked: ranked }
+    };
+  }
+  if (plausibleCount > 0) {
+    return {
+      key: 'differential',
+      label: 'Differential Diagnosis',
+      score: 10,
+      maxScore: maxPoints,
+      note: 'Plausible related diagnoses were listed, but the best-fit diagnosis was omitted.',
+      details: { primaryCorrect: false, includedIndex: -1, plausibleCount: plausibleCount, ranked: ranked }
+    };
+  }
+  return {
+    key: 'differential',
+    label: 'Differential Diagnosis',
+    score: 0,
+    maxScore: maxPoints,
+    note: 'Differential list was clinically inappropriate for this presentation.',
+    details: { primaryCorrect: false, includedIndex: -1, plausibleCount: 0, ranked: ranked }
+  };
+}
+
+function csWeightedScoreTests(c, cfg) {
+  const maxPoints = cfg.tests.maxPoints;
+  const buckets = csWeightedBuildTestBuckets(c, cfg.tests);
+  const selectedCaseTests = csWeightedUnique((csState.revealed || []).map(r => r && r.name ? r.name : ''));
+  const selectedIrrelevant = csWeightedUnique(Array.from(csState.redHerringWasted || []));
+
+  let keyHits = 0;
+  let supportiveHits = 0;
+  let neutralHits = 0;
+  let irrelevantHits = 0;
+  let raw = 0;
+
+  selectedCaseTests.forEach((name) => {
+    const key = csWeightedNormalize(name);
+    if (buckets.key.has(key)) {
+      keyHits += 1;
+      raw += cfg.tests.points.key;
+    } else if (buckets.supportive.has(key)) {
+      supportiveHits += 1;
+      raw += cfg.tests.points.supportive;
+    } else if (buckets.irrelevant.has(key)) {
+      irrelevantHits += 1;
+      raw -= cfg.tests.points.irrelevantPenalty;
+    } else {
+      neutralHits += 1;
+      raw += cfg.tests.points.neutral;
+    }
+  });
+
+  selectedIrrelevant.forEach(() => {
+    irrelevantHits += 1;
+    raw -= cfg.tests.points.irrelevantPenalty;
+  });
+
+  const score = csWeightedClamp(Math.round(raw), 0, maxPoints);
+  const selectedTotal = selectedCaseTests.length + selectedIrrelevant.length;
+  const parts = [];
+  if (keyHits > 0) parts.push(`${keyHits} high-value`);
+  if (supportiveHits > 0) parts.push(`${supportiveHits} supportive`);
+  if (neutralHits > 0) parts.push(`${neutralHits} neutral`);
+  if (irrelevantHits > 0) parts.push(`${irrelevantHits} irrelevant`);
+  const note = selectedTotal > 0
+    ? `Selected tests: ${parts.join(', ') || 'none scored'}.`
+    : 'No examination tests selected.';
+
+  return {
+    key: 'tests',
+    label: 'Test Selection',
+    score: score,
+    maxScore: maxPoints,
+    note: note,
+    details: {
+      selectedTotal: selectedTotal,
+      keyHits: keyHits,
+      supportiveHits: supportiveHits,
+      neutralHits: neutralHits,
+      irrelevantHits: irrelevantHits,
+      selectedCaseTests: selectedCaseTests,
+      selectedIrrelevant: selectedIrrelevant
+    }
+  };
+}
+
+function csWeightedFlagMatch(selected, target) {
+  const a = csWeightedNormalize(selected);
+  const b = csWeightedNormalize(target);
+  if (!a || !b) return false;
+  return a.includes(b) || b.includes(a);
+}
+
+function csWeightedHasEscalation(c) {
+  const managementText = csWeightedNormalize(`${csState.management || ''} ${csState.finalReasoning || ''}`);
+  if (CS_WEIGHTED_ESCALATION_TERMS.some(term => managementText.includes(term))) return true;
+  if (String(csState.imagingSuggestion || '').trim().toLowerCase() === 'yes') return true;
+  return false;
+}
+
+function csWeightedScoreRedFlags(c, cfg) {
+  const maxPoints = cfg.redFlags.maxPoints;
+  const mode = csWeightedInferRedFlagMode(c, cfg.redFlags.mode);
+  const selected = csWeightedList(csState.redFlags || []);
+  const selectedCount = selected.length;
+  const critical = cfg.redFlags.criticalFlags.length
+    ? cfg.redFlags.criticalFlags
+    : (mode === 'identify' ? (c.redFlags || []).slice(0, 2) : []);
+  const criticalHits = selected.filter(flag => critical.some(target => csWeightedFlagMatch(flag, target))).length;
+  const escalationHit = csWeightedHasEscalation(c);
+
+  if (mode === 'identify') {
+    if (selectedCount === 0) {
+      return {
+        key: 'red_flags',
+        label: 'Red Flag Recognition',
+        score: 0,
+        maxScore: maxPoints,
+        note: 'Meaningful safety concerns were not documented in this high-risk case.',
+        details: { mode: mode, selectedCount: selectedCount, criticalHits: criticalHits, escalationHit: escalationHit }
+      };
+    }
+    if (criticalHits > 0 && (!cfg.redFlags.escalationRequired || escalationHit)) {
+      return {
+        key: 'red_flags',
+        label: 'Red Flag Recognition',
+        score: maxPoints,
+        maxScore: maxPoints,
+        note: 'Critical safety findings were identified with appropriate escalation.',
+        details: { mode: mode, selectedCount: selectedCount, criticalHits: criticalHits, escalationHit: escalationHit }
+      };
+    }
+    return {
+      key: 'red_flags',
+      label: 'Red Flag Recognition',
+      score: csWeightedClamp(Math.round(maxPoints * 0.7), 0, maxPoints),
+      maxScore: maxPoints,
+      note: 'Some safety concerns were recognized, but escalation or prioritization was incomplete.',
+      details: { mode: mode, selectedCount: selectedCount, criticalHits: criticalHits, escalationHit: escalationHit }
+    };
+  }
+
+  if (selectedCount > 0) {
+    return {
+      key: 'red_flags',
+      label: 'Red Flag Recognition',
+      score: maxPoints,
+      maxScore: maxPoints,
+      note: 'Major red flags were screened and appropriately ruled out.',
+      details: { mode: mode, selectedCount: selectedCount, criticalHits: criticalHits, escalationHit: escalationHit }
+    };
+  }
+  return {
+    key: 'red_flags',
+    label: 'Red Flag Recognition',
+    score: 0,
+    maxScore: maxPoints,
+    note: 'No red flag screening was documented.',
+    details: { mode: mode, selectedCount: selectedCount, criticalHits: criticalHits, escalationHit: escalationHit }
+  };
+}
+
+function csWeightedScoreEfficiency(cfg, testResult) {
+  const maxPoints = cfg.efficiency.maxPoints;
+  const totalSelected = Number(testResult && testResult.details ? testResult.details.selectedTotal : 0) || 0;
+  const irrelevantHits = Number(testResult && testResult.details ? testResult.details.irrelevantHits : 0) || 0;
+  const idealMin = Math.max(1, Math.round(cfg.efficiency.idealMin));
+  const idealMax = Math.max(idealMin, Math.round(cfg.efficiency.idealMax));
+  const softMax = Math.max(idealMax, Math.round(cfg.efficiency.softMax));
+
+  let score = maxPoints;
+  if (totalSelected === 0) score -= 12;
+  else if (totalSelected < idealMin) score -= (idealMin - totalSelected) * cfg.efficiency.underusePenalty;
+
+  if (totalSelected > idealMax) {
+    const softOver = Math.max(0, Math.min(totalSelected, softMax) - idealMax);
+    const hardOver = Math.max(0, totalSelected - softMax);
+    score -= softOver * cfg.efficiency.overusePenalty;
+    score -= hardOver * cfg.efficiency.excessivePenalty;
+  }
+  if (irrelevantHits > 0) score -= irrelevantHits * cfg.efficiency.irrelevantPenalty;
+  score = csWeightedClamp(Math.round(score), 0, maxPoints);
+
+  let note = '';
+  if (score >= Math.round(maxPoints * 0.9)) {
+    note = `Focused examination strategy (${totalSelected} test${totalSelected === 1 ? '' : 's'} selected).`;
+  } else if (totalSelected === 0) {
+    note = 'No tests were selected, which limited diagnostic efficiency.';
+  } else if (totalSelected > idealMax) {
+    note = `Selected ${totalSelected} tests; a more focused set (${idealMin}-${idealMax}) would improve efficiency.`;
+  } else if (totalSelected < idealMin) {
+    note = `Only ${totalSelected} tests selected; a slightly broader focused exam would improve confidence.`;
+  } else {
+    note = 'Test selection was reasonably focused with minor efficiency losses.';
+  }
+  if (irrelevantHits > 0) note += ` ${irrelevantHits} unnecessary test${irrelevantHits === 1 ? '' : 's'} reduced efficiency.`;
+
+  return {
+    key: 'efficiency',
+    label: 'Diagnostic Efficiency',
+    score: score,
+    maxScore: maxPoints,
+    note: note,
+    details: {
+      totalSelected: totalSelected,
+      irrelevantHits: irrelevantHits,
+      idealMin: idealMin,
+      idealMax: idealMax
+    }
+  };
+}
+
+function csWeightedBuildSummary(c, result) {
+  const parts = [];
+  const diffMeta = result.meta.differential;
+  const testMeta = result.meta.tests;
+  const rfMeta = result.meta.redFlags;
+
+  if (diffMeta.primaryCorrect) parts.push(`You correctly identified ${c.correctDx} as the primary diagnosis.`);
+  else if (diffMeta.includedIndex >= 0) parts.push(`You included ${c.correctDx} in the differential but did not rank it first.`);
+  else if (diffMeta.plausibleCount > 0) parts.push('You selected plausible related diagnoses, but omitted the best-fit diagnosis.');
+  else parts.push('Your differential was not aligned with the case pattern.');
+
+  if (testMeta.keyHits > 0 && testMeta.irrelevantHits === 0) {
+    parts.push('Your selected tests were high-value and diagnostically focused.');
+  } else if (testMeta.keyHits > 0) {
+    parts.push(`Your selected tests included key discriminators, but ${testMeta.irrelevantHits} added limited value.`);
+  } else if (testMeta.selectedTotal === 0) {
+    parts.push('No tests were selected, which limited objective discrimination.');
+  } else {
+    parts.push('Your test selection was broad but not weighted toward high-yield findings.');
+  }
+
+  if (rfMeta.mode === 'identify') {
+    if (rfMeta.score >= CS_WEIGHTED_SCORE_MODEL.redFlags) parts.push('You recognized the key safety concern and escalated appropriately.');
+    else parts.push('Safety recognition and escalation need to be sharper for this presentation.');
+  } else {
+    if (rfMeta.score >= CS_WEIGHTED_SCORE_MODEL.redFlags) parts.push('You appropriately ruled out major red flags.');
+    else parts.push('Red flag screening documentation was insufficient.');
+  }
+
+  const weakest = result.breakdown.slice().sort((a, b) => (a.score / a.maxScore) - (b.score / b.maxScore))[0];
+  if (weakest) parts.push(`Most important improvement target: ${weakest.label.toLowerCase()} (${weakest.score}/${weakest.maxScore}).`);
+  return parts.join(' ');
+}
+
+function csComputeWeightedScore(c) {
+  if (!c) return null;
+  const cfg = csWeightedBuildConfig(c);
+  const differential = csWeightedScoreDifferential(c, cfg);
+  const tests = csWeightedScoreTests(c, cfg);
+  const redFlags = csWeightedScoreRedFlags(c, cfg);
+  const efficiency = csWeightedScoreEfficiency(cfg, tests);
+  const breakdown = [differential, tests, redFlags, efficiency];
+  const total = csWeightedClamp(
+    breakdown.reduce((sum, item) => sum + Number(item.score || 0), 0),
+    0,
+    100
+  );
+
+  const result = {
+    totalScore: total,
+    maxScore: 100,
+    differentialScore: differential.score,
+    testSelectionScore: tests.score,
+    redFlagScore: redFlags.score,
+    efficiencyScore: efficiency.score,
+    breakdown: breakdown,
+    detailedFeedback: breakdown.map(item => ({
+      criterion: item.label,
+      note: item.note,
+      score: item.score,
+      maxScore: item.maxScore
+    })),
+    feedbackSummary: '',
+    meta: {
+      differential: {
+        primaryCorrect: !!(differential.details && differential.details.primaryCorrect),
+        includedIndex: Number(differential.details && differential.details.includedIndex != null ? differential.details.includedIndex : -1),
+        plausibleCount: Number(differential.details && differential.details.plausibleCount || 0)
+      },
+      tests: {
+        selectedTotal: Number(tests.details && tests.details.selectedTotal || 0),
+        keyHits: Number(tests.details && tests.details.keyHits || 0),
+        supportiveHits: Number(tests.details && tests.details.supportiveHits || 0),
+        neutralHits: Number(tests.details && tests.details.neutralHits || 0),
+        irrelevantHits: Number(tests.details && tests.details.irrelevantHits || 0),
+        selectedCaseTests: tests.details && tests.details.selectedCaseTests || [],
+        selectedIrrelevant: tests.details && tests.details.selectedIrrelevant || []
+      },
+      redFlags: {
+        mode: redFlags.details && redFlags.details.mode || 'rule_out',
+        selectedCount: Number(redFlags.details && redFlags.details.selectedCount || 0),
+        criticalHits: Number(redFlags.details && redFlags.details.criticalHits || 0),
+        escalationHit: !!(redFlags.details && redFlags.details.escalationHit),
+        score: redFlags.score
+      }
+    }
+  };
+
+  result.feedbackSummary = csWeightedBuildSummary(c, result);
+  return result;
+}
+
+function csGetWeightedScoreResult() {
+  const cached = csState.lastScoreResult;
+  if (cached && Number.isFinite(Number(cached.totalScore))) return cached;
+  if (!csState.case) return null;
+  const computed = csComputeWeightedScore(csState.case);
+  if (computed) {
+    csState.lastScoreResult = computed;
+    return computed;
+  }
+  return null;
+}
+
 async function csGenerateDebrief() {
   csSaveFieldState();
   csGoTo('pagCS6');
 
   const c = csState.case;
+  if (!c) return;
   csState.attemptSummary = csBuildAttemptSummary(false);
-  const finalDxLower = (csState.finalDx || '').toLowerCase().trim();
-  const initialDdxAll = [csState.ddx1, csState.ddx2, csState.ddx3].map(s => (s||'').toLowerCase().trim());
+  const scoreResult = csComputeWeightedScore(c);
+  if (!scoreResult) return;
+  csState.lastScoreResult = scoreResult;
 
-  // ── Correct diagnosis check ──
-  const dxCorrect = c.correctDxAliases.some(alias =>
-    finalDxLower.includes(alias) || (alias.includes(finalDxLower) && finalDxLower.length > 3)
-  );
-
-  // ── Was correct Dx in initial differential? ──
-  const dxInInitial = c.correctDxAliases.some(alias =>
-    initialDdxAll.some(d => d.includes(alias) || (alias.includes(d) && d.length > 3))
-  );
-
-  // ── Rubric scoring ──
-  const rubricRows = [];
-  let totalWeight = 0;
-  let earnedWeight = 0;
-
-  c.rubric.forEach(r => {
-    totalWeight += r.weight;
-    let score = 0;
-    let note = '';
-
-    if (r.key === 'finalDx') {
-      if (dxCorrect) {
-        score = r.weight;
-        note = `Correct — "${csState.finalDx}"`;
-      } else if ((csState.finalDx || '').trim()) {
-        score = Math.max(1, Math.round(r.weight * 0.5));
-        note = `Submitted: "${csState.finalDx}" (partial credit for clinical commitment)`;
-      } else {
-        score = 0;
-        note = 'No diagnosis submitted';
-      }
-    } else if (r.key === 'ddx1-3') {
-      const hasInitialAttempt = initialDdxAll.some(Boolean);
-      if (dxInInitial) {
-        score = r.weight;
-        note = 'Correct diagnosis identified in initial differential';
-      } else if (hasInitialAttempt) {
-        score = Math.max(1, Math.round(r.weight * 0.5));
-        note = 'Initial differential completed; refine inclusion of the best-fit diagnosis';
-      } else {
-        score = 0;
-        note = 'No initial differential entered';
-      }
-    } else if (r.key === 'management') {
-      const mgmtEval = _scoreManagement(c, csState.management, r.weight, r.criterion);
-      score = mgmtEval.score;
-      note = mgmtEval.note;
-    } else if (r.key === 'redFlags') {
-      if (csState.redFlags.length > 0) {
-        score = r.weight;
-        note = `${csState.redFlags.length} flag(s) checked`;
-      } else {
-        score = Math.max(1, Math.round(r.weight * 0.4));
-        note = 'No red flags checked — partial credit retained';
-      }
-    } else if (r.key === 'reasoning') {
-      const combined = (csState.reasoning1 || '') + ' ' + (csState.reasoning2 || '') + ' ' + (csState.finalReasoning || '');
-      const reasonEval = _scoreReasoning(c, combined, r.weight, r.criterion);
-      score = reasonEval.score;
-      note = reasonEval.note;
-    }
-
-    earnedWeight += score;
-    rubricRows.push({ criterion: r.criterion, note, score, maxScore: r.weight });
-  });
-
-  // Light-touch scoring for imaging recommendation reasoning.
-  const imagingEval = csScoreImagingSuggestion(c, csState.imagingSuggestion, 2);
-  totalWeight += imagingEval.maxScore;
-  earnedWeight += imagingEval.score;
-  rubricRows.push({
-    criterion: 'Imaging recommendation based on suspected diagnosis (Yes / No / Not at this time)',
-    note: imagingEval.note,
-    score: imagingEval.score,
-    maxScore: imagingEval.maxScore
-  });
-
-  const pct = totalWeight > 0 ? Math.round((earnedWeight / totalWeight) * 100) : 0;
-  const verdict = pct >= 72 ? 'Strong reasoning' : pct >= 45 ? 'Developing reasoning' : 'Early-stage reasoning';
-  const verdictSub = pct >= 72
-    ? 'Your clinical reasoning was well-structured. Review the expert reasoning report below for any refinements.'
-    : pct >= 45
-    ? 'You identified key features and are building strong pattern recognition. Use the key findings section to sharpen your differential discrimination.'
-    : 'You built a starting clinical framework. Review the expert reasoning report and align your next attempt with the discriminating findings.';
+  const totalScore = Number(scoreResult.totalScore) || 0;
+  const verdict = totalScore >= 85 ? 'Strong reasoning' : totalScore >= 65 ? 'Developing reasoning' : 'Needs focused review';
+  const verdictSub = scoreResult.feedbackSummary || 'Review the category scores and expert reasoning report to refine your next attempt.';
+  const dxCorrect = !!(scoreResult.meta && scoreResult.meta.differential && scoreResult.meta.differential.primaryCorrect);
+  const rubricRows = scoreResult.detailedFeedback || [];
 
   // ── Render score ring ──
-  document.getElementById('csScoreNum').textContent = `${pct}%`;
-  document.getElementById('csScoreDen').textContent = `${earnedWeight} / ${totalWeight} points`;
-  document.getElementById('csVerdict').textContent = verdict;
+  document.getElementById('csScoreNum').textContent = `${totalScore}`;
+  document.getElementById('csScoreDen').textContent = `/ ${scoreResult.maxScore || 100}`;
+  document.getElementById('csVerdict').textContent = csImperializeText(verdict);
   document.getElementById('csVerdictSub').textContent = csImperializeText(verdictSub);
 
   // ── Diagnosis comparison ──
@@ -13557,14 +13968,14 @@ async function csGenerateDebrief() {
       </div>
       <div class="cs-dx-differentials">
         <span class="cs-dx-diff-label">Key differentials to consider</span>
-        ${c.keyDifferentials.map(d => `<span class="cs-dx-diff-tag">${escapeHtml(csImperializeText(d))}</span>`).join('')}
+        ${(c.keyDifferentials || []).map(d => `<span class="cs-dx-diff-tag">${escapeHtml(csImperializeText(d))}</span>`).join('')}
       </div>`;
   }
 
   // ── Key findings ──
   const kf = document.getElementById('csKeyFindings');
   if (kf) {
-    kf.innerHTML = c.keyFindings.map(f =>
+    kf.innerHTML = (c.keyFindings || []).map(f =>
       `<div class="cs-key-finding">
         <span class="cs-key-finding-icon">${f.icon}</span>
         <span class="cs-key-finding-text">${csImperializeHtml(f.text)}</span>
@@ -13577,9 +13988,9 @@ async function csGenerateDebrief() {
   if (tbody) {
     tbody.innerHTML = rubricRows.map(r =>
       `<tr>
-        <td>${escapeHtml(csImperializeText(r.criterion))}</td>
-        <td style="font-size:0.72rem;color:var(--muted)">${escapeHtml(csImperializeText(r.note))}</td>
-        <td class="cs-rubric-score ${r.score >= r.maxScore ? 'full' : r.score > 0 ? 'partial' : 'zero'}">${r.score}/${r.maxScore}</td>
+        <td>${escapeHtml(csImperializeText(r.criterion || 'Category'))}</td>
+        <td style="font-size:0.72rem;color:var(--muted)">${escapeHtml(csImperializeText(r.note || 'No feedback.'))}</td>
+        <td class="cs-rubric-score ${Number(r.score) >= Number(r.maxScore) ? 'full' : Number(r.score) > 0 ? 'partial' : 'zero'}">${Number(r.score) || 0}/${Number(r.maxScore) || 0}</td>
       </tr>`
     ).join('');
   }
@@ -13770,6 +14181,7 @@ function saveToStorage() {
       redHerringWasted: [...(csState.redHerringWasted || [])],
       aiFeedbackHtml: trimmedAiFeedback,
       attemptSummary: csState.attemptSummary || null,
+      lastScoreResult: csState.lastScoreResult || null,
     };
     // Store the active cs page so we can restore it
     const csPages = ['pagCS0','pagCS1','pagCS2','pagCS3','pagCS4','pagCS5','pagCS6'];
@@ -13846,6 +14258,7 @@ function loadFromStorage() {
       csState.redHerringPool  = cs.redHerringPool  || null;
       csState.aiFeedbackHtml  = cs.aiFeedbackHtml  || null;
       csState.attemptSummary  = cs.attemptSummary  || null;
+      csState.lastScoreResult = cs.lastScoreResult || null;
       csState.examRowOrder    = cs.examRowOrder    || {};
       csState.examRowOrderCaseKey = cs.examRowOrderCaseKey || '';
       csState.activeExamTab   = cs.activeExamTab   || null;
@@ -14583,10 +14996,26 @@ function csReportGeneratedDate() {
 }
 
 function csReportScoreBreakdown() {
+  const scoreResult = csGetWeightedScoreResult();
+  if (scoreResult) {
+    return {
+      score: Number(scoreResult.totalScore) || 0,
+      scoreTotal: Number(scoreResult.maxScore) || 100
+    };
+  }
+
   const denText = csReportPlainText(document.getElementById('csScoreDen')?.textContent || '');
-  const match = denText.match(/(\d+)\s*\/\s*(\d+)/);
-  if (match) {
-    return { score: Number(match[1]), scoreTotal: Number(match[2]) };
+  const fullMatch = denText.match(/(\d+)\s*\/\s*(\d+)/);
+  if (fullMatch) {
+    return { score: Number(fullMatch[1]), scoreTotal: Number(fullMatch[2]) };
+  }
+  const denOnly = denText.match(/(\d+)/);
+  if (denOnly) {
+    const numText = csReportPlainText(document.getElementById('csScoreNum')?.textContent || '');
+    const scoreNum = Number(String(numText).replace(/[^\d.]/g, ''));
+    if (Number.isFinite(scoreNum)) {
+      return { score: scoreNum, scoreTotal: Number(denOnly[1]) || 100 };
+    }
   }
 
   let earned = 0;
@@ -14602,6 +15031,23 @@ function csReportScoreBreakdown() {
 }
 
 function csReportRubricRows() {
+  const scoreResult = csGetWeightedScoreResult();
+  if (scoreResult && Array.isArray(scoreResult.detailedFeedback)) {
+    return scoreResult.detailedFeedback.map((row) => {
+      const score = Number(row.score) || 0;
+      const maxScore = Number(row.maxScore) || 0;
+      let scoreColor = 'amber';
+      if (score <= 0) scoreColor = 'red';
+      else if (maxScore > 0 && score >= maxScore) scoreColor = 'green';
+      return {
+        criterion: csReportPlainText(row.criterion || 'Category') || 'Category',
+        response: csReportPlainText(row.note || 'No response') || 'No response',
+        score: `${score}/${maxScore}`,
+        score_color: scoreColor
+      };
+    });
+  }
+
   const rows = [];
   document.querySelectorAll('#csRubricBody tr').forEach((tr) => {
     const cells = tr.querySelectorAll('td');
@@ -14730,11 +15176,28 @@ function csBuildReportDataPayload() {
   const caseMatch = csReportPlainText(c.title || '').match(/case\s*([0-9]{2})/i) || String(c.id || '').match(/([0-9]{2})$/);
   const caseToken = caseMatch ? `CASE ${caseMatch[1]}` : '';
   const breadcrumb = [regionUpper, levelUpper, caseToken].filter(Boolean).join(' · ');
+  const scoreResult = csGetWeightedScoreResult();
   const scoreData = csReportScoreBreakdown();
   const rubricRows = csReportRubricRows();
   const correctDx = csSplitDiagnosisForReport(c.correctDx || '');
   const verdictTitle = csReportPlainText(document.getElementById('csVerdict')?.textContent || '');
   const verdictSubtitle = csReportPlainText(document.getElementById('csVerdictSub')?.textContent || '');
+  const scoreBreakdown = scoreResult && Array.isArray(scoreResult.breakdown)
+    ? scoreResult.breakdown.map((row) => ({
+        key: row.key || '',
+        label: csReportPlainText(row.label || 'Category') || 'Category',
+        score: Number(row.score) || 0,
+        max_score: Number(row.maxScore) || 0,
+        note: csReportPlainText(row.note || '')
+      }))
+    : [];
+  const reasoningSummary = csReportPlainText(
+    (scoreResult && scoreResult.feedbackSummary) || verdictSubtitle || 'Clinical reasoning summary.'
+  ) || 'Clinical reasoning summary.';
+  const selectedDifferential = csWeightedCollectRankedDifferential().slice(0, 6).map(csReportPlainText).filter(Boolean);
+  const selectedTests = csWeightedUnique(
+    ((csState.revealed || []).map(r => r && r.name ? r.name : '')).concat(Array.from(csState.redHerringWasted || []))
+  ).map(csReportPlainText).filter(Boolean);
 
   return {
     case_title: csReportPlainText(c.title || 'Clinical Case'),
@@ -14744,13 +15207,18 @@ function csBuildReportDataPayload() {
     score: Number.isFinite(scoreData.score) ? scoreData.score : 0,
     score_total: Number.isFinite(scoreData.scoreTotal) ? scoreData.scoreTotal : 0,
     verdict_title: verdictTitle || 'Debrief',
-    verdict_subtitle: verdictSubtitle || 'Clinical reasoning summary.',
+    verdict_subtitle: reasoningSummary,
     user_diagnosis: csReportPlainText(csState.finalDx || '') || 'Not submitted',
     user_confidence: `${csConfidenceLabel(csState.confidence)} confidence ${Math.round(csClampConfidence(csState.confidence))}%`,
     correct_diagnosis: correctDx.title || csReportPlainText(c.correctDx || 'Not specified'),
     correct_diagnosis_sub: correctDx.sub || '',
     differentials: (c.keyDifferentials || []).map(csReportPlainText).filter(Boolean).slice(0, 3),
     key_finding: csReportPlainText((c.keyFindings && c.keyFindings[0] && c.keyFindings[0].text) || '') || 'See key findings in debrief.',
+    scoring_model_version: 'clinical-reasoning-v1',
+    score_breakdown: scoreBreakdown,
+    reasoning_summary: reasoningSummary,
+    selected_differential: selectedDifferential,
+    selected_tests: selectedTests,
     rubric_rows: rubricRows,
     expert_diagnosis_title: correctDx.title || csReportPlainText(c.correctDx || 'Not specified'),
     expert_diagnosis_sub: correctDx.sub || '',
