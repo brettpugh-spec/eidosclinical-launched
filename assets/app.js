@@ -12254,11 +12254,11 @@ function csEnsureHtml2PdfLib() {
   if (_csHtml2PdfLibPromise) return _csHtml2PdfLibPromise;
 
   const scriptSources = [
+    '/assets/html2pdf.bundle.min.js?v=20260309',
+    './assets/html2pdf.bundle.min.js?v=20260309',
+    'assets/html2pdf.bundle.min.js?v=20260309',
     'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js',
-    'https://unpkg.com/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js',
-    './assets/html2pdf.bundle.min.js',
-    'assets/html2pdf.bundle.min.js',
-    '/assets/html2pdf.bundle.min.js'
+    'https://unpkg.com/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js'
   ];
 
   const loadOneSource = (src, idx) => new Promise((resolve, reject) => {
@@ -12268,6 +12268,10 @@ function csEnsureHtml2PdfLib() {
     }
     const scriptId = `csHtml2PdfBundle${idx}`;
     let script = document.getElementById(scriptId);
+    if (script && script.getAttribute('src') !== src) {
+      script.remove();
+      script = null;
+    }
     if (!script) {
       script = document.createElement('script');
       script.id = scriptId;
@@ -12277,7 +12281,8 @@ function csEnsureHtml2PdfLib() {
     }
 
     const started = Date.now();
-    const maxWait = 9000;
+    const isRemote = /^https?:\/\//i.test(src);
+    const maxWait = isRemote ? 9000 : 2600;
     const poll = setInterval(() => {
       if (csHasWorkingHtml2PdfLib()) {
         clearInterval(poll);
@@ -12505,7 +12510,8 @@ async function csGenerateDebriefPdfBlob() {
   if (!exportNode) return null;
 
   const host = document.createElement('div');
-  host.style.cssText = 'position:absolute;left:0;top:0;z-index:-1;opacity:0;pointer-events:none;';
+  // Keep the node off-screen but renderable for html2canvas across mobile browsers.
+  host.style.cssText = 'position:fixed;left:-10000px;top:0;z-index:-1;opacity:1;pointer-events:none;';
   host.appendChild(exportNode);
   document.body.appendChild(host);
 
@@ -12552,6 +12558,22 @@ function csOpenPrintDebriefFallback() {
 
 function csTryUnlockedPdfFallback() {
   if (!csCanUsePdfFallbackPath()) return false;
+  return csOpenPrintDebriefFallback();
+}
+
+function csTryLockedPrintRescue(errorCode) {
+  if (!CS_PDF_EXPORT_LOCK.enabled || csPdfExportOverrideEnabled()) return false;
+  const code = String(errorCode || '').trim();
+  const shouldRescue =
+    code === 'pdf_blob_timeout' ||
+    code === 'pdf_blob_unavailable' ||
+    code === 'pdf_blob_empty' ||
+    code === 'html2pdf_unavailable' ||
+    code === 'html2pdf_stub_detected' ||
+    code === 'html2pdf_load_timeout' ||
+    code === 'html2pdf_load_error' ||
+    code === 'html2pdf_load_unavailable';
+  if (!shouldRescue) return false;
   return csOpenPrintDebriefFallback();
 }
 
@@ -12989,6 +13011,8 @@ async function csShareReport() {
     }
     if (csTryUnlockedPdfFallback()) {
       _showToast('Opened print dialog to save/share the current debrief PDF.', 2600);
+    } else if (csTryLockedPrintRescue(code)) {
+      _showToast('Opened browser print view to save the current debrief PDF.', 3000);
     } else if (CS_PDF_EXPORT_LOCK.enabled && !csPdfExportOverrideEnabled()) {
       _showToast('PDF export lock blocked fallback path. Retry once debrief is fully loaded.', 3000);
     } else {
@@ -13043,6 +13067,10 @@ async function csExportPDF() {
     }
     if (csTryUnlockedPdfFallback()) {
       _showToast('Opened print dialog for PDF save.', 2400);
+      return;
+    }
+    if (csTryLockedPrintRescue(code)) {
+      _showToast('Opened browser print view to save the current debrief PDF.', 3000);
       return;
     }
     if (CS_PDF_EXPORT_LOCK.enabled && !csPdfExportOverrideEnabled()) {
