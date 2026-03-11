@@ -2059,6 +2059,16 @@
     gap: 5px;
     flex: 1;
     position: relative;
+    border: none;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+  }
+  .cs-flow-step.is-clickable { cursor: pointer; }
+  .cs-flow-step.is-clickable:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
   }
   .cs-flow-step:not(:last-child)::after {
     content: '';
@@ -2097,6 +2107,13 @@
     opacity: 0.65;
     font-size: 0.6rem;
   }
+  .cs-flow-step.is-clickable:hover .cs-flow-dot,
+  .cs-flow-step.is-clickable:focus-visible .cs-flow-dot {
+    border-color: var(--accent);
+    color: var(--accent);
+    opacity: 1;
+    transform: translateY(-1px);
+  }
   .cs-flow-label {
     font-family: 'DM Sans', sans-serif;
     font-size: 0.56rem;
@@ -2108,6 +2125,10 @@
     line-height: 1.2;
   }
   .cs-flow-step.active .cs-flow-label { color: var(--accent); font-weight: 500; }
+  .cs-flow-step.is-clickable:hover .cs-flow-label,
+  .cs-flow-step.is-clickable:focus-visible .cs-flow-label {
+    color: var(--muted2);
+  }
   @media (max-width: 540px) {
     .cs-flow-label { display: none; }
     .cs-flow-progress { padding-bottom: 20px; }

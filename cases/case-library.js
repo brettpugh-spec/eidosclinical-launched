@@ -238,7 +238,7 @@ const CASE_LIBRARY = {
       ],
       correctDx: 'Achilles Tendinopathy',
       correctDxAliases: ['achilles tendinopathy', 'mid-portion achilles tendinopathy', 'achilles tendinosis', 'achilles tendonitis'],
-      keyDifferentials: ['Achilles Tendon Rupture Suspected (urgent referral)', 'Plantar Fasciitis', 'Retrocalcaneal Bursitis', 'Tarsal Tunnel Syndrome'],
+      keyDifferentials: ['Achilles Tendon Tear / Rupture (urgent referral)', 'Plantar Fasciitis', 'Retrocalcaneal Bursitis', 'Tarsal Tunnel Syndrome'],
       keyFindings: [
         { icon: '✓', text: '<strong>Warm-up phenomenon</strong> — classic tendinopathic pain behavior.' },
         { icon: '✓', text: '<strong>Positive Painful Arc and Royal London Hospital tests</strong> — highly specific clinical tests for mid-portion Achilles tendinopathy.' },
@@ -350,10 +350,10 @@ const CASE_LIBRARY = {
       keyFindings: [
         { icon: '✓', text: '<strong>Postural driver</strong> — symptoms perfectly match a sustained forward-head loading pattern with suboccipital tension causing cervicogenic headaches.' },
         { icon: '✓', text: '<strong>Negative neuro screen</strong> — negative Spurling and ULTT1, combined with normal reflexes/strength, definitively rules out radiculopathy.' },
-        { icon: '✓', text: '<strong>Deep neck flexor inhibition</strong> — failed CCFT is the classic motor control deficit associated with mechanical neck pain.' },
+        { icon: '✓', text: '<strong>Deep neck flexor inhibition</strong> — failed CCFT is the classic motor control deficit associated with cervical mobility deficit / mechanical neck pain.' },
       ],
       rubric: [
-        { criterion: 'Correct primary diagnosis (Mechanical Neck Pain / Postural)', key: 'finalDx', weight: 3 },
+        { criterion: 'Correct primary diagnosis (Cervical Mobility Deficit / Mechanical Neck Pain)', key: 'finalDx', weight: 3 },
         { criterion: 'Recognizes absence of radicular symptoms', key: 'reasoning', weight: 2 },
         { criterion: 'Management targets deep neck flexors and postural education', key: 'management', weight: 2 },
       ],
@@ -364,7 +364,7 @@ const CASE_LIBRARY = {
         { name: 'Cervical flexion-rotation test', result: 'Restricted rotation to the right at C1/C2 — 28° (normal >44°). Supports upper cervical joint contribution to the cervicogenic headache component.', valence: 'pos' },
         { name: 'Adson test (thoracic outlet)', result: 'Negative — no radial pulse change or arm symptoms with head rotation and shoulder depression. Thoracic outlet syndrome excluded.', valence: 'neg', isDistractor: true },
       ],
-      expertReasoningPrompt: `The correct diagnosis is Mechanical Neck Pain with secondary cervicogenic headaches (often framed as a Cervical Mobility Deficit or Postural Syndrome). The key to this case is ruling out nerve root involvement: the patient has no distal arm symptoms, and Spurling's, ULTT1, and the neuro screen are all negative. Her pain is entirely somatic and driven by sustained occupational postures (forward head). This posture mechanically loads the lower cervical joints and adaptively shortens the suboccipital muscles, which refers pain to the head. The failed CCFT highlights the underlying motor control issue: weak deep neck flexors overpowered by superficial muscles (SCM, Upper Trap). Management must center on ergonomic advice, deep neck flexor endurance training, and thoracic mobility.`,
+      expertReasoningPrompt: `The correct diagnosis is Cervical Mobility Deficit / Mechanical Neck Pain with secondary cervicogenic headaches (often framed as a postural syndrome). The key to this case is ruling out nerve root involvement: the patient has no distal arm symptoms, and Spurling's, ULTT1, and the neuro screen are all negative. Her pain is entirely somatic and driven by sustained occupational postures (forward head). This posture mechanically loads the lower cervical joints and adaptively shortens the suboccipital muscles, which refers pain to the head. The failed CCFT highlights the underlying motor control issue: weak deep neck flexors overpowered by superficial muscles (SCM, Upper Trap). Management must center on ergonomic advice, deep neck flexor endurance training, and thoracic mobility.`,
     },
 
     {
@@ -1471,7 +1471,8 @@ const CASE_LIBRARY = {
 
 };
 /* =========================================================
-   AUTO-GENERATE 72 CASES (3 per region per level)
+   AUTO-GENERATE 88 CASES
+   (5 beginner + 3 intermediate + 3 advanced per region)
    Paste after CASE_LIBRARY ends and before meta-count sync.
    ========================================================= */
 
@@ -1482,8 +1483,159 @@ function generateCaseLibraryPack3() {
   const SEEDS = [
     { code: '01', focus: 'gradual onset related to daily activity and load tolerance' },
     { code: '02', focus: 'repetitive overuse with clear task-specific provocation' },
-    { code: '03', focus: 'red-flag screening pattern appropriate to level complexity' }
+    { code: '03', focus: 'red-flag screening pattern appropriate to level complexity' },
+    { code: '04', focus: 'an alternate diagnosis with similar presenting pain distribution' },
+    { code: '05', focus: 'same-region diagnosis variation with distinct activity profile' }
   ];
+  const BASE_SEED_COUNT = 3;
+
+  // Beginner expansion plan: two extra cases per region that pull from
+  // existing diagnosis possibilities/case content to preserve clinical alignment.
+  const BEGINNER_EXPANSION_PLAN = {
+    Cervical: [
+      {
+        includeAny: ['cervical radicular pain', 'cervical radiculopathy', 'radicular pain'],
+        levels: ['intermediate']
+      },
+      {
+        includeAny: ['cervical radicular pain', 'cervical radiculopathy', 'radicular pain'],
+        levels: ['intermediate'],
+        dxOverride: {
+          name: 'Cervical Disc Herniation (Non-Surgical Pattern)',
+          aliases: ['cervical disc herniation', 'cervical disc bulge', 'discogenic cervical radicular pain', 'cervical radiculopathy']
+        }
+      }
+    ],
+    Thoracic: [
+      {
+        includeAny: ['thoracic mobility deficit', 'thoracic segmental dysfunction', 'thoracic facet joint dysfunction'],
+        levels: ['intermediate', 'beginner']
+      },
+      {
+        includeAny: ['rib stress fracture'],
+        levels: ['intermediate']
+      }
+    ],
+    Lumbar: [
+      {
+        includeAny: ['lumbar radiculopathy', 'lumbar disc herniation'],
+        levels: ['intermediate']
+      },
+      {
+        includeAny: ['lumbar radiculopathy', 'lumbar disc herniation'],
+        levels: ['intermediate'],
+        dxOverride: {
+          name: 'Lumbar Disc Herniation (Neural Irritation Pattern)',
+          aliases: ['lumbar disc herniation', 'slipped disc', 'discogenic lumbar pain with radicular features', 'lumbar radiculopathy']
+        }
+      }
+    ],
+    Shoulder: [
+      {
+        includeAny: ['ac joint pathology', 'acromioclavicular'],
+        levels: ['intermediate']
+      },
+      {
+        includeAny: ['adhesive capsulitis', 'frozen shoulder'],
+        levels: ['advanced', 'intermediate']
+      }
+    ],
+    Elbow: [
+      {
+        includeAny: ['medial epicondylalgia', 'golfer s elbow'],
+        levels: ['intermediate']
+      },
+      {
+        includeAny: ['cubital tunnel syndrome', 'ulnar neuropathy'],
+        levels: ['intermediate']
+      }
+    ],
+    Hip: [
+      {
+        includeAny: ['gluteal tendinopathy', 'greater trochanteric pain syndrome', 'gtps'],
+        levels: ['intermediate']
+      },
+      {
+        includeAny: ['proximal hamstring tendinopathy', 'hamstring'],
+        levels: ['intermediate']
+      }
+    ],
+    Knee: [
+      {
+        includeAny: ['patellofemoral pain syndrome', 'pfps'],
+        levels: ['intermediate', 'beginner']
+      },
+      {
+        includeAny: ['osgood schlatter'],
+        levels: ['advanced', 'intermediate']
+      }
+    ],
+    Ankle: [
+      {
+        includeAny: ['syndesmosis sprain', 'high ankle sprain'],
+        levels: ['intermediate']
+      },
+      {
+        includeAny: ['achilles tendon rupture', 'achilles rupture'],
+        levels: ['advanced']
+      }
+    ]
+  };
+
+  // Final safeguard: keep every beginner case in the pool while preventing
+  // repeated diagnosis labels in the same region set.
+  const BEGINNER_CASE_ID_DX_OVERRIDES = {
+    bC03: {
+      name: 'Cervical Spondylotic Myelopathy',
+      aliases: ['cervical spondylotic myelopathy', 'cervical myelopathy', 'degenerative cervical myelopathy']
+    },
+    bT03: {
+      name: 'Thoracic Myelopathy - Suspected Metastatic Spinal Cord Compression (MSCC)',
+      aliases: ['thoracic myelopathy', 'mscc', 'metastatic spinal cord compression', 'thoracic cord compression']
+    },
+    bT05: {
+      name: 'Thoracic Facet Joint Dysfunction',
+      aliases: ['thoracic facet joint dysfunction', 'thoracic facet syndrome', 'thoracic zygapophyseal joint pain']
+    },
+    bL04: {
+      name: 'Lumbar Disc Herniation (Foraminal Compression Pattern)',
+      aliases: ['lumbar disc herniation', 'lumbar foraminal stenosis', 'discogenic lumbar radicular pain']
+    },
+    bE03: {
+      name: 'Distal Biceps Tendon Tear (Traumatic Pattern)',
+      aliases: ['distal biceps tendon tear', 'distal biceps injury', 'partial distal biceps tear']
+    },
+    bE05: {
+      name: 'Cubital Tunnel Syndrome',
+      aliases: [
+        'cubital tunnel syndrome',
+        'ulnar neuropathy at elbow',
+        'ulnar neuropathy at elbow (cubital tunnel pattern)',
+        'cubital tunnel pattern',
+        'ulnar nerve entrapment elbow',
+        'ulnar neuropathy',
+        'ulnar nerve'
+      ]
+    },
+    bH04: {
+      name: 'Gluteal Tendinopathy (Lateral Hip Pain Pattern)',
+      aliases: ['gluteal tendinopathy', 'lateral hip pain syndrome', 'greater trochanteric tendon pain']
+    },
+    bA04: {
+      name: 'Chronic Ankle Instability (Recurrent Sprain Pattern)',
+      aliases: ['chronic ankle instability', 'recurrent ankle sprain', 'functional ankle instability']
+    },
+    bA05: {
+      name: 'Achilles Tendon Tear / Rupture (urgent referral)',
+      aliases: [
+        'achilles tendon tear / rupture (urgent referral)',
+        'acute achilles tendon tear',
+        'achilles tendon tear',
+        'achilles rupture pattern',
+        'achilles tendon rupture suspected (urgent referral)'
+      ]
+    }
+  };
 
   function baseRubric(primaryDxLabel) {
     return [
@@ -1497,7 +1649,7 @@ function generateCaseLibraryPack3() {
 
   const DX_BANK = {
     Cervical: {
-      beginner: { name: 'Mechanical Neck Pain', aliases: ['mechanical neck pain', 'neck strain', 'cervical strain', 'postural neck pain'] },
+      beginner: { name: 'Cervical Mobility Deficit / Mechanical Neck Pain', aliases: ['cervical mobility deficit / mechanical neck pain', 'cervical mobility deficit', 'mechanical neck pain', 'neck strain', 'cervical strain', 'postural neck pain'] },
       intermediate: { name: 'Cervical Radicular Pain (suspected)', aliases: ['cervical radiculopathy', 'radicular pain', 'pinched nerve', 'nerve root irritation'] },
       advanced: { name: 'Cervical Myelopathy Suspected (urgent referral)', aliases: ['cervical myelopathy', 'myelopathy', 'cord compression', 'cervical stenosis with myelopathy'] }
     },
@@ -1534,7 +1686,17 @@ function generateCaseLibraryPack3() {
     Ankle: {
       beginner: { name: 'Lateral Ankle Sprain (ATFL)', aliases: ['ankle sprain', 'lateral ankle sprain', 'atfl sprain', 'inversion sprain'] },
       intermediate: { name: 'Syndesmosis Sprain (High Ankle Sprain)', aliases: ['syndesmosis', 'high ankle sprain', 'aitfl'] },
-      advanced: { name: 'Achilles Tendon Rupture Suspected (urgent referral)', aliases: ['achilles rupture', 'achilles tendon rupture', 'tendon rupture'] }
+      advanced: {
+        name: 'Achilles Tendon Tear / Rupture (urgent referral)',
+        aliases: [
+          'achilles tendon tear / rupture (urgent referral)',
+          'achilles tendon rupture suspected (urgent referral)',
+          'achilles rupture',
+          'achilles tendon rupture',
+          'achilles tendon tear',
+          'tendon rupture'
+        ]
+      }
     }
   };
 
@@ -1589,7 +1751,7 @@ function generateCaseLibraryPack3() {
       },
       Cervical: {
         beginner: [
-          `<p>A 29-year-old female graphic designer presents with <strong>right-sided neck pain and suboccipital headache</strong> of 5 weeks duration. She has recently started working from home, using a laptop on a kitchen table with no external monitor, in a sustained forward-head posture for 9+ hours daily.</p><p>Pain is posterior right neck and upper trapezius (4/10), with a dull right-sided headache from the suboccipital to the temple. Worst at end of day. Eases with position change and brief self-massage. No arm tingling, no weakness, no visual changes. Morning stiffness resolves within 15 minutes.</p><p>No prior neck history. Non-smoker. BMI 21. Tried ibuprofen — minimal benefit. No red flag features.</p>`,
+          `<p>A 36-year-old male emergency dispatcher presents with <strong>left-sided neck pain and suboccipital headache</strong> of 6 weeks duration. He recently moved to night shifts and spends 10-11 hours monitoring multiple screens with his head rotated left for prolonged periods.</p><p>Pain is left posterior neck and upper trapezius (5/10), with a dull occipital headache that builds through the shift. Symptoms are worse after prolonged sitting and improve with brief walking, thoracic extension, and heat. No arm tingling, no distal numbness, no weakness, and no visual disturbance. Morning stiffness settles within 10-15 minutes.</p><p>No trauma or prior cervical injury. Non-smoker. BMI 26. Tried over-the-counter NSAIDs with partial short-term relief. No red flag features.</p>`,
           `<p>A 38-year-old male truck driver presents with <strong>left-sided neck pain</strong> of 3 weeks duration following a long interstate haul (14-hour drive). The pain began during the drive and has not fully settled. He attributes it to neck position during driving.</p><p>Pain is left-sided, posterior and lateral neck (5/10), provoked by left rotation and sustained neutral cervical posture. Eases with movement and heat. Morning stiffness lasting 20 minutes. No arm symptoms. No headache. No gait changes. He denies weakness.</p><p>Prior mild neck pain 2 years ago that resolved spontaneously. Works 60 hours/week. BMI 28. On no regular medications. Keen to return to work within the week.</p>`,
           `<p>A 34-year-old female primary school teacher presents with <strong>bilateral neck stiffness and central neck ache</strong> of 4 weeks duration. She links the onset to prolonged writing on a low whiteboard throughout a busy term. The pain is symmetrical and dull.</p><p>Central and bilateral posterior neck ache (4/10), stiff end-range rotation both directions. Provoked by sustained forward head flexion (writing, phone use) and eased by extension, heat, and lying supine. No arm symptoms. No headache. No neurological symptoms of any kind.</p><p>No trauma. No prior cervical history. On no medications. Works in a classroom with students aged 6–8 years. Asks about exercises to prevent recurrence.</p>`,
         ],
@@ -2496,7 +2658,7 @@ function generateCaseLibraryPack3() {
 
     // 1) Template candidates, preferring target level ordering.
     orderedLevels.forEach((profileLevel, idx) => {
-      pool.push(_buildTemplateCandidate(region, profileLevel, (seedIndex + idx) % 3));
+      pool.push(_buildTemplateCandidate(region, profileLevel, (seedIndex + idx) % BASE_SEED_COUNT));
     });
 
     // 2) Curated authored cases, preferring target level ordering.
@@ -2535,26 +2697,71 @@ function generateCaseLibraryPack3() {
     });
   }
 
+  function _candidateDxText(candidate) {
+    const labels = [candidate && candidate.dxName].concat((candidate && candidate.dxAliases) || []);
+    return labels.map(_dxKey).filter(Boolean).join(' ');
+  }
+
+  function _candidateMatchesPlan(candidate, planItem) {
+    if (!planItem || !candidate) return true;
+    const terms = Array.isArray(planItem.includeAny) ? planItem.includeAny : [];
+    if (!terms.length) return true;
+    const dxText = _candidateDxText(candidate);
+    return terms.some(term => {
+      const key = _dxKey(term);
+      return !!key && dxText.includes(key);
+    });
+  }
+
+  function _candidateMatchesLevels(candidate, allowedLevels) {
+    if (!candidate) return false;
+    const levels = Array.isArray(allowedLevels) ? allowedLevels : [];
+    if (!levels.length) return true;
+    const sourceLevel = String(candidate.sourceLevel || '').toLowerCase();
+    return levels.some(level => String(level || '').toLowerCase() === sourceLevel);
+  }
+
+  function _isDxAlreadyUsed(dxSet, candidate) {
+    if (!(dxSet instanceof Set) || !candidate) return false;
+    const keys = _dxKeySet(candidate.dxName, candidate.dxAliases);
+    for (const key of keys) {
+      if (dxSet.has(key)) return true;
+    }
+    return false;
+  }
+
+  function _addDxKeys(dxSet, dxName, dxAliases) {
+    if (!(dxSet instanceof Set)) return;
+    _dxKeySet(dxName, dxAliases).forEach(key => dxSet.add(key));
+  }
+
   function idExists(level, id) {
     return (CASE_LIBRARY[level] || []).some(c => c && c.id === id);
   }
 
   const usedRegionCandidateSignatures = {};
+  const usedRegionDiagnosisByLevel = {};
   REGIONS.forEach(region => {
     const signatures = new Set();
+    const byLevel = {};
     LEVELS.forEach(level => {
+      const dxSet = new Set();
       (CASE_LIBRARY[level] || []).forEach(c => {
         if (!c || !_regionMatches(c.region, region)) return;
         const signature = _candidateSignature(c);
         if (signature) signatures.add(signature);
+        _addDxKeys(dxSet, c.correctDx, c.correctDxAliases);
       });
+      byLevel[level] = dxSet;
     });
     usedRegionCandidateSignatures[region] = signatures;
+    usedRegionDiagnosisByLevel[region] = byLevel;
   });
 
   LEVELS.forEach(level => {
     REGIONS.forEach(region => {
-      for (let i = 0; i < 3; i++) {
+      const seedCount = level === 'beginner' ? SEEDS.length : BASE_SEED_COUNT;
+      for (let i = 0; i < seedCount; i++) {
         const seed = SEEDS[i];
         const prefix = level === 'beginner' ? 'b' : (level === 'intermediate' ? 'i' : 'a');
         const id = `${prefix}${region[0]}${seed.code}`;
@@ -2574,26 +2781,72 @@ function generateCaseLibraryPack3() {
         ];
         let generatedRubric = baseRubric(bank.name);
         let generatedExpertReasoning = `This ${level} ${region} case emphasizes structured differential diagnosis, targeted test selection, red flag screening, and level-appropriate management planning.`;
+        const isKneeBeginnerPresetSeed = level === 'beginner' && region === 'Knee' && i < BASE_SEED_COUNT;
+        const isBeginnerExpansionSeed = level === 'beginner' && i >= BASE_SEED_COUNT;
+        const regionUsedSignatures = usedRegionCandidateSignatures[region] || new Set();
+        const regionUsedDx = (((usedRegionDiagnosisByLevel[region] || {})[level]) || new Set());
+        usedRegionCandidateSignatures[region] = regionUsedSignatures;
+        if (!usedRegionDiagnosisByLevel[region]) usedRegionDiagnosisByLevel[region] = {};
+        usedRegionDiagnosisByLevel[region][level] = regionUsedDx;
+        let forcedDxOverride = null;
 
-        // Build generated cases from same-level candidates to keep progression consistent
-        // and avoid cross-level duplicate case narratives.
-        if (!(level === 'beginner' && region === 'Knee')) {
-          const regionUsedSignatures = usedRegionCandidateSignatures[region] || new Set();
-          usedRegionCandidateSignatures[region] = regionUsedSignatures;
-
+        // Build generated cases from candidate pools.
+        // Default behavior keeps same-level progression; beginner expansion seeds
+        // can pull planned cross-level diagnoses to add safe diagnosis diversity.
+        if (!isKneeBeginnerPresetSeed) {
           const candidates = _buildRegionCandidatePool(region, i, level);
-          const rotated = candidates.slice(i).concat(candidates.slice(0, i));
-          const canUseCandidate = (p, rejectUsedSignature) => {
+          const rotateAt = candidates.length ? (i % candidates.length) : 0;
+          const rotated = candidates.slice(rotateAt).concat(candidates.slice(0, rotateAt));
+          const regionalPlan = isBeginnerExpansionSeed
+            ? (BEGINNER_EXPANSION_PLAN[region] || [])
+            : [];
+          const planItem = isBeginnerExpansionSeed
+            ? (regionalPlan[i - BASE_SEED_COUNT] || null)
+            : null;
+          if (planItem && planItem.dxOverride) forcedDxOverride = planItem.dxOverride;
+
+          const candidateAllowedLevels = (level === 'beginner')
+            ? ((planItem && Array.isArray(planItem.levels) && planItem.levels.length)
+              ? planItem.levels
+              : ['beginner', 'intermediate'])
+            : [level];
+
+          const canUseCandidate = (p, cfg) => {
+            const options = cfg || {};
             if (!p) return false;
-            if (String(p.sourceLevel || '').toLowerCase() !== String(level || '').toLowerCase()) return false;
-            if (!rejectUsedSignature) return true;
-            const signature = _candidateSignature(p);
-            if (signature && regionUsedSignatures.has(signature)) return false;
+            if (level === 'beginner') {
+              const forbiddenBeginnerDx = 'serious pathology screen positive medical workup needed';
+              const candidateDxText = _candidateDxText(p);
+              if (candidateDxText.includes(forbiddenBeginnerDx)) return false;
+            }
+
+            if (options.enforceLevels && !_candidateMatchesLevels(p, candidateAllowedLevels)) return false;
+            if (options.enforcePlan && !_candidateMatchesPlan(p, planItem)) return false;
+            if (options.rejectUsedDx && _isDxAlreadyUsed(regionUsedDx, p)) return false;
+            if (options.rejectUsedSignature) {
+              const signature = _candidateSignature(p);
+              if (signature && regionUsedSignatures.has(signature)) return false;
+            }
             return true;
           };
 
-          let picked = rotated.find(p => canUseCandidate(p, true))
-            || rotated.find(p => canUseCandidate(p, false));
+          let picked;
+          if (level === 'beginner') {
+            // Prefer plan-matched diagnosis + expected level + unseen diagnosis/signature.
+            const enforcePlan = !!planItem;
+            picked = rotated.find(p => canUseCandidate(p, { enforceLevels: true, enforcePlan, rejectUsedDx: true, rejectUsedSignature: true }))
+              || rotated.find(p => canUseCandidate(p, { enforceLevels: true, enforcePlan, rejectUsedDx: false, rejectUsedSignature: true }))
+              || rotated.find(p => canUseCandidate(p, { enforceLevels: true, enforcePlan: false, rejectUsedDx: true, rejectUsedSignature: true }))
+              || rotated.find(p => canUseCandidate(p, { enforceLevels: true, enforcePlan: false, rejectUsedDx: false, rejectUsedSignature: true }))
+              || rotated.find(p => canUseCandidate(p, { enforceLevels: true, enforcePlan, rejectUsedDx: true, rejectUsedSignature: false }))
+              || rotated.find(p => canUseCandidate(p, { enforceLevels: true, enforcePlan: false, rejectUsedDx: true, rejectUsedSignature: false }))
+              || rotated.find(p => canUseCandidate(p, { enforceLevels: false, enforcePlan, rejectUsedDx: true, rejectUsedSignature: true }))
+              || rotated.find(p => canUseCandidate(p, { enforceLevels: false, enforcePlan: false, rejectUsedDx: true, rejectUsedSignature: true }))
+              || rotated.find(p => canUseCandidate(p, { enforceLevels: false, enforcePlan: false, rejectUsedDx: false, rejectUsedSignature: false }));
+          } else {
+            picked = rotated.find(p => canUseCandidate(p, { enforceLevels: true, rejectUsedSignature: true }))
+              || rotated.find(p => canUseCandidate(p, { enforceLevels: true, rejectUsedSignature: false }));
+          }
 
           if (!picked) continue;
           const pickedSignature = _candidateSignature(picked);
@@ -2610,10 +2863,30 @@ function generateCaseLibraryPack3() {
           generatedKeyFindings = _deepClone(picked.keyFindings || generatedKeyFindings);
           generatedRubric = _deepClone(picked.rubric || baseRubric(bank.name));
           generatedExpertReasoning = picked.expertReasoningPrompt || generatedExpertReasoning;
+
+          if (forcedDxOverride && forcedDxOverride.name) {
+            bank = {
+              name: forcedDxOverride.name,
+              aliases: Array.isArray(forcedDxOverride.aliases) && forcedDxOverride.aliases.length
+                ? forcedDxOverride.aliases.slice()
+                : [forcedDxOverride.name]
+            };
+            if (forcedDxOverride.title) generatedTitle = forcedDxOverride.title;
+            if (Array.isArray(forcedDxOverride.keyDifferentials) && forcedDxOverride.keyDifferentials.length) {
+              generatedKeyDifferentials = forcedDxOverride.keyDifferentials.slice();
+            }
+            if (Array.isArray(forcedDxOverride.redFlags) && forcedDxOverride.redFlags.length) {
+              generatedRedFlags = forcedDxOverride.redFlags.slice();
+            }
+            if (forcedDxOverride.expertReasoningPrompt) {
+              generatedExpertReasoning = forcedDxOverride.expertReasoningPrompt;
+            }
+            generatedRubric = baseRubric(bank.name);
+          }
         }
 
         // Ensure beginner knee generated templates are diagnosis-diverse (no duplicates).
-        if (level === 'beginner' && region === 'Knee') {
+        if (isKneeBeginnerPresetSeed) {
           const kneeBeginnerCases = [
             {
               title: 'Anterior inferior patellar pain in a volleyball player',
@@ -2800,6 +3073,26 @@ function generateCaseLibraryPack3() {
             'This template is scored with Shoulder Impingement Syndrome (Subacromial) as the primary diagnosis. Rotator cuff tendinopathy/subacromial pain terms are clinically overlapping and accepted as related terminology.';
         }
 
+        if (level === 'beginner') {
+          const idDxOverride = BEGINNER_CASE_ID_DX_OVERRIDES[id];
+          if (idDxOverride && idDxOverride.name) {
+            bank = {
+              name: idDxOverride.name,
+              aliases: Array.isArray(idDxOverride.aliases) && idDxOverride.aliases.length
+                ? idDxOverride.aliases.slice()
+                : [idDxOverride.name]
+            };
+            if (idDxOverride.title) generatedTitle = idDxOverride.title;
+            if (Array.isArray(idDxOverride.keyDifferentials) && idDxOverride.keyDifferentials.length) {
+              generatedKeyDifferentials = idDxOverride.keyDifferentials.slice();
+            }
+            if (idDxOverride.expertReasoningPrompt) {
+              generatedExpertReasoning = idDxOverride.expertReasoningPrompt;
+            }
+            generatedRubric = baseRubric(bank.name);
+          }
+        }
+
         generatedInfo = _deriveInfoFromVignette(generatedVignette, generatedInfo);
 
         const caseObj = {
@@ -2818,6 +3111,10 @@ function generateCaseLibraryPack3() {
           rubric: generatedRubric,
           expertReasoningPrompt: generatedExpertReasoning
         };
+
+        const generatedSignature = _candidateSignature(caseObj);
+        if (generatedSignature) regionUsedSignatures.add(generatedSignature);
+        _addDxKeys(regionUsedDx, caseObj.correctDx, caseObj.correctDxAliases);
 
         if (!CASE_LIBRARY[level]) CASE_LIBRARY[level] = [];
         CASE_LIBRARY[level].push(caseObj);

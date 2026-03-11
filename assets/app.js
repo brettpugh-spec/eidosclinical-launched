@@ -1486,6 +1486,9 @@ const ONSET_PROFILE = {
   "Hip Flexor Strain":                    'acute',
   "Hamstring Strain":                     'acute',
   "Hamstring Tear / Strain":              'acute',
+  "Achilles Tendon Tear / Rupture (urgent referral)": 'acute',
+  "Achilles Tendon Rupture Suspected (urgent referral)": 'acute',
+  "Acute Achilles Tendon Tear (Urgent Referral Pattern)": 'acute',
   "Adductor Strain":                      'acute',
   "Hip Adductor Strain":                  'acute',
   "Thoracic Muscle Strain":               'acute',
@@ -1519,6 +1522,7 @@ const ONSET_PROFILE = {
   "Pes Anserine Bursitis":               'subacute',
   "Greater Trochanteric Pain Syndrome":   'subacute',
   "Cervicogenic Headache":               'subacute',
+  "Cervical Mobility Deficit / Mechanical Neck Pain": 'subacute',
   "Mechanical Neck Pain":                 'subacute',
   "Subacute Low Back Pain":               'subacute',
   "Scapular Dyskinesia":                  'subacute',
@@ -9427,12 +9431,16 @@ function csRenderProgress(activePageId) {
     const el = document.getElementById('csProgress' + (i + 1));
     if (!el) return;
     el.innerHTML = steps.map((s, j) => {
+      const canJumpBack = j < i;
       const state = j < i ? 'done' : j === i ? 'active' : '';
       const dot = j < i ? '✓' : (j + 1).toString();
-      return `<div class="cs-flow-step ${state}">
+      const clickableClass = canJumpBack ? 'is-clickable' : '';
+      const clickAttr = canJumpBack ? ` data-click="csGoTo('${s.page}')" title="Go to ${s.label}"` : ' disabled';
+      const ariaLabel = canJumpBack ? `Jump to step ${j + 1}: ${s.label}` : `Step ${j + 1}: ${s.label}`;
+      return `<button type="button" class="cs-flow-step ${state} ${clickableClass}"${clickAttr} aria-label="${ariaLabel}">
         <div class="cs-flow-dot">${dot}</div>
         <span class="cs-flow-label">${s.label}</span>
-      </div>`;
+      </button>`;
     }).join('');
   });
 }
@@ -9778,10 +9786,12 @@ const CS_DDX_CANONICAL_MAP = {
   'achilles tendinopathy mid portion': 'Achilles Tendinopathy',
   'mid portion achilles tendinopathy': 'Achilles Tendinopathy',
   'insertional achilles tendinopathy': 'Achilles Tendinopathy',
-  'achilles tendon rupture': 'Achilles Tendon Rupture Suspected (urgent referral)',
-  'achilles rupture': 'Achilles Tendon Rupture Suspected (urgent referral)',
-  'achilles tendon rupture partial': 'Achilles Tendon Rupture Suspected (urgent referral)',
-  'achilles tendon rupture suspected urgent referral': 'Achilles Tendon Rupture Suspected (urgent referral)'
+  'achilles tendon rupture': 'Achilles Tendon Tear / Rupture (urgent referral)',
+  'achilles rupture': 'Achilles Tendon Tear / Rupture (urgent referral)',
+  'achilles tendon rupture partial': 'Achilles Tendon Tear / Rupture (urgent referral)',
+  'achilles tendon rupture suspected urgent referral': 'Achilles Tendon Tear / Rupture (urgent referral)',
+  'acute achilles tendon tear urgent referral pattern': 'Achilles Tendon Tear / Rupture (urgent referral)',
+  'achilles tendon tear rupture urgent referral': 'Achilles Tendon Tear / Rupture (urgent referral)'
 };
 
 function csCanonicalDdxLabel(name) {
