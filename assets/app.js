@@ -46,7 +46,7 @@ function persistRefreshRoute() {
 }
 
 function ensureGlobalOverlaysMounted() {
-  ['aboutOverlay', 'emailOverlay'].forEach((overlayId) => {
+  ['aboutOverlay', 'emailOverlay', 'caseInstructionsOverlay'].forEach((overlayId) => {
     const overlay = document.getElementById(overlayId);
     if (!overlay) return;
     if (overlay.parentElement !== document.body) {
@@ -6144,6 +6144,7 @@ function _handleModalKeydown(e) {
     if (_activeModal === 'rfOverlay') closeRedFlags();
     if (_activeModal === 'emailOverlay') closeEmailModal();
     if (_activeModal === 'aboutOverlay') closeAbout();
+    if (_activeModal === 'caseInstructionsOverlay') closeCaseInstructions();
     return;
   }
 
@@ -7342,6 +7343,24 @@ function initAboutOverlayClose() {
   el.dataset.boundClose = '1';
 }
 
+function openCaseInstructions() {
+  initCaseInstructionsOverlayClose();
+  _openModal('caseInstructionsOverlay', '.cs-how-modal');
+}
+
+function closeCaseInstructions() {
+  _closeModal('caseInstructionsOverlay');
+}
+
+function initCaseInstructionsOverlayClose() {
+  const el = document.getElementById('caseInstructionsOverlay');
+  if (!el || el.dataset.boundClose === '1') return;
+  el.addEventListener('click', function(e) {
+    if (e.target === el) closeCaseInstructions();
+  });
+  el.dataset.boundClose = '1';
+}
+
 
 function _setEmailModalMessage(msg, isError) {
   let el = document.getElementById('emailModalInlineMsg');
@@ -8083,6 +8102,30 @@ function restoreProgressOnLoad() {
   }
 }
 
+function csTokensForLevel(level) {
+  const normalized = String(level || 'beginner').trim().toLowerCase();
+  if (normalized === 'advanced') return 5;
+  if (normalized === 'intermediate') return 6;
+  return 8;
+}
+
+function csLevelLabel(level) {
+  const normalized = String(level || 'beginner').trim().toLowerCase() || 'beginner';
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function csExamStrategyNote(level, totalTokens) {
+  const tokenText = `${totalTokens} total token${totalTokens === 1 ? '' : 's'}`;
+  const normalized = String(level || 'beginner').trim().toLowerCase();
+  if (normalized === 'advanced') {
+    return `You have ${tokenText}. Commit early, prioritize only the highest-yield tests, and let the missing data force sharper reasoning.`;
+  }
+  if (normalized === 'intermediate') {
+    return `You have ${tokenText}. Use them to separate your leading diagnoses rather than screening broadly.`;
+  }
+  return `You have ${tokenText}. You can explore a bit more, but the strongest approach is still targeted, hypothesis-driven testing.`;
+}
+
 function csSetFilter(type, val, btnEl) {
   if (type === 'region') {
     csState.filterRegion = val;
@@ -8264,7 +8307,7 @@ function csStartFilteredCase() {
 
     csState.case = randomCase;
     csState.level = pickedLevel;
-    csState.tokensTotal = pickedLevel === 'beginner' ? 8 : pickedLevel === 'intermediate' ? 6 : 5;
+    csState.tokensTotal = csTokensForLevel(pickedLevel);
     csResetSessionData();
     updateDdxDatalistForCase(randomCase);
     csRenderVignette();
@@ -8527,7 +8570,7 @@ function csRenderVignette() {
   }
   // Subtitle
   const sub = document.getElementById('cs1Sub');
-  if (sub) sub.textContent = `${c.region}${c.info && c.info.duration ? ' · ' + c.info.duration : ''} · ${(csState.level||'').charAt(0).toUpperCase()+(csState.level||'').slice(1)} case`;
+  if (sub) sub.textContent = `${c.region}${c.info && c.info.duration ? ' · ' + c.info.duration : ''} · ${csLevelLabel(csState.level)} case`;
 }
 
 function csDeepClone(value) {
@@ -8773,7 +8816,7 @@ function csRestoreFromSharedReportPayload(payload) {
   csState.active = true;
   csState.level = caseRef.level;
   csState.case = caseRef.caseData;
-  csState.tokensTotal = Number(payload.tokens_total) > 0 ? Number(payload.tokens_total) : (caseRef.level === 'beginner' ? 8 : caseRef.level === 'intermediate' ? 6 : 5);
+  csState.tokensTotal = Number(payload.tokens_total) > 0 ? Number(payload.tokens_total) : csTokensForLevel(caseRef.level);
   csState.tokensUsed = Math.max(0, Math.floor(Number(payload.tokens_used) || 0));
   csState.ddx1 = String(payload.ddx1 || '');
   csState.ddx2 = String(payload.ddx2 || '');
@@ -10407,14 +10450,25 @@ function csRenderExamination() {
   const c = csState.case;
   if (!c) return;
   csNormalizeCaseExamCategoriesForMmt(c);
-  const tokensLeft = csState.tokensTotal - csState.tokensUsed;
+  const totalTokens = Number(csState.tokensTotal) > 0 ? Number(csState.tokensTotal) : csTokensForLevel(csState.level);
+  csState.tokensTotal = totalTokens;
+  const levelLabel = csLevelLabel(csState.level);
+  const tokensLeft = totalTokens - csState.tokensUsed;
+  const sub = document.getElementById('csExamSub');
+  const brief = document.getElementById('csExamBrief');
+  if (sub) {
+    sub.innerHTML = '<span class="cs-exam-sub-main">Choose tests deliberately — 1 token = 1 test result.</span><span class="cs-exam-sub-detail">Tests are grouped by category, and you cannot examine everything.</span>';
+  }
+  if (brief) {
+    brief.innerHTML = `<strong>${escapeHtml(levelLabel)} case:</strong> ${escapeHtml(csExamStrategyNote(csState.level, totalTokens))}`;
+  }
 
   // Token dots
   const dots = document.getElementById('csTokenDots');
   const count = document.getElementById('csTokenCount');
   if (dots) {
     dots.innerHTML = '';
-    for (let i = 0; i < csState.tokensTotal; i++) {
+    for (let i = 0; i < totalTokens; i++) {
       const d = document.createElement('div');
       d.className = 'cs-token' + (i < csState.tokensUsed ? ' used' : '');
       dots.appendChild(d);

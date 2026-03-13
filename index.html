@@ -26,7 +26,7 @@
 <meta name="twitter:description" content="Clinical intelligence for MSK — differential diagnosis, clinical case simulation, and patient-facing assessment guidance." />
 <meta name="twitter:image" content="https://eidos.health/og-image.png" />
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/app.css?v=20260309-2">
+<link rel="stylesheet" href="assets/app.css?v=20260313-12">
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-3N26ED0PYE"></script>
 <script>
@@ -279,6 +279,44 @@
         <h4>Got it, thanks</h4>
         <p>We'll let you know when there's something worth sharing. In the meantime, consider booking with a physio if you haven't already.</p>
         <button class="btn btn-secondary" data-click="closeEmailModal()" style="margin-top:20px;">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="cs-how-overlay" id="caseInstructionsOverlay" aria-hidden="true">
+    <div class="cs-how-modal" role="dialog" aria-modal="true" aria-labelledby="caseInstructionsTitle" aria-describedby="caseInstructionsDesc" tabindex="-1">
+      <button class="cs-how-modal-close" data-click="closeCaseInstructions()" aria-label="Close">×</button>
+      <div class="cs-how-modal-eyebrow">Case Simulation Guide</div>
+      <h3 id="caseInstructionsTitle">How it works</h3>
+      <p id="caseInstructionsDesc" class="cs-how-modal-copy">A quick walkthrough before you start examining the case.</p>
+      <div class="cs-quick-guide" aria-label="Case simulation instructions">
+        <span class="cs-quick-guide-label">The flow</span>
+        <div class="cs-quick-guide-grid">
+          <div class="cs-quick-guide-step">
+            <span class="cs-quick-guide-num">1</span>
+            <p>Read the history first and form your initial differential before you examine anything.</p>
+          </div>
+          <div class="cs-quick-guide-step">
+            <span class="cs-quick-guide-num">2</span>
+            <p>Spend tokens to reveal only the tests most likely to confirm or challenge your leading hypotheses.</p>
+          </div>
+          <div class="cs-quick-guide-step">
+            <span class="cs-quick-guide-num">3</span>
+            <p>Update your differential, commit to a diagnosis, and compare your reasoning in the debrief.</p>
+          </div>
+        </div>
+        <div class="cs-token-guide">
+          <span class="cs-token-guide-label">Difficulty and tokens</span>
+          <div class="cs-token-guide-pills" aria-label="Token counts by difficulty">
+            <span class="cs-token-guide-pill">Beginner · 8 tokens</span>
+            <span class="cs-token-guide-pill">Intermediate · 6 tokens</span>
+            <span class="cs-token-guide-pill">Advanced · 5 tokens</span>
+          </div>
+          <p class="cs-token-guide-note">1 token = 1 test result. Higher difficulty means fewer tokens, so the simulation pushes users toward targeted, indicated testing instead of broad screening.</p>
+        </div>
+      </div>
+      <div class="cs-how-modal-actions">
+        <button class="btn btn-secondary" data-click="closeCaseInstructions()">Close</button>
       </div>
     </div>
   </div>
@@ -608,6 +646,9 @@
   <div class="cs-page-inner">
     <h2>Clinical Case Simulation Library</h2>
     <p class="subtitle">Filter by region and difficulty to target your current coursework, or mix it up for clinical rotation prep.</p>
+    <div class="cs-library-tools">
+      <button class="btn btn-secondary cs-how-btn" type="button" data-click="openCaseInstructions()">How it works</button>
+    </div>
     <div class="section-label" style="margin-top:24px;">1. Select Region</div>
     <div class="chip-group" id="csRegionChips">
       <button class="chip selected" data-click="csSetFilter('region', 'all', this)">Any Region</button>
@@ -700,7 +741,8 @@
   <div class="cs-page-inner">
     <div class="cs-flow-progress" id="csProgress3"></div>
     <h2>Selective Examination</h2>
-    <p class="subtitle">Choose tests deliberately — each costs one examination token. Tests are grouped by category. You cannot examine everything.</p>
+    <p class="subtitle" id="csExamSub"><span class="cs-exam-sub-main">Choose tests deliberately — 1 token = 1 test result.</span><span class="cs-exam-sub-detail">Tests are grouped by category, and you cannot examine everything.</span></p>
+    <div class="cs-exam-brief" id="csExamBrief"></div>
     <div class="cs-token-bar">
       <span class="cs-token-label">Tokens remaining</span>
       <div id="csTokenDots" style="display:flex;gap:5px;align-items:center;"></div>
@@ -871,6 +913,6 @@
 
 <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script>
 <script src="cases/case-library.js?v=20260311r12"></script>
-<script src="assets/app.js?v=20260311r21"></script>
+<script src="assets/app.js?v=20260313r25"></script>
 </body>
 </html>
