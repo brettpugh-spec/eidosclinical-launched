@@ -7,7 +7,7 @@
 <meta name="description" content="EIDOS is a musculoskeletal clinical intelligence tool for physiotherapists, PT students, and patients. Differential diagnosis support, clinical case simulation, and structured assessment guidance across 10+ body regions." />
 <meta name="eidos-build" content="kit-uid-4625fa2552-r16" />
 <meta name="robots" content="index, follow" />
-<link rel="canonical" href="https://eidos.health/" />
+<link rel="canonical" href="https://eidosclinical.com/" />
 <meta name="theme-color" content="#132635" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -18,15 +18,15 @@
 <meta property="og:type" content="website" />
 <meta property="og:title" content="EIDOS &mdash; Clinical Intelligence for MSK" />
 <meta property="og:description" content="Differential diagnosis support, clinical case simulation, and structured MSK assessment guidance for clinicians and patients." />
-<meta property="og:image" content="https://eidos.health/og-image.png" />
-<meta property="og:url" content="https://eidos.health/" />
+<meta property="og:image" content="https://eidosclinical.com/og-image.png" />
+<meta property="og:url" content="https://eidosclinical.com/" />
 <meta property="og:site_name" content="EIDOS" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="EIDOS &mdash; Clinical Intelligence for MSK" />
 <meta name="twitter:description" content="Clinical intelligence for MSK — differential diagnosis, clinical case simulation, and patient-facing assessment guidance." />
-<meta name="twitter:image" content="https://eidos.health/og-image.png" />
+<meta name="twitter:image" content="https://eidosclinical.com/og-image.png" />
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/app.css?v=20260313-12">
+<link rel="stylesheet" href="assets/app.css?v=20260315-12">
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-3N26ED0PYE"></script>
 <script>
@@ -73,6 +73,8 @@
   <nav class="header-nav">
     <button id="headerHomeBtn" class="header-nav-btn" data-action="home">Home</button>
     <span class="header-nav-divider" aria-hidden="true"></span>
+    <button id="headerDailyQuizBtn" class="header-nav-btn" data-action="daily-quiz">Daily Quiz</button>
+    <span class="header-nav-divider" aria-hidden="true"></span>
     <button id="headerAboutBtn" class="header-nav-btn" data-action="about">About</button>
   </nav>
   <button id="startOverBtn" style="display:none;" data-click="resetAll()" aria-label="Start over"></button>
@@ -90,6 +92,7 @@
     </a>
     <nav class="home-nav">
       <button class="home-nav-link" id="homeAboutBtn">About</button>
+      <button class="home-nav-link" id="homeDailyQuizBtn">Daily Quiz</button>
       <button class="home-nav-link" id="homeExploreBtn">Explore</button>
     </nav>
   </header>
@@ -279,6 +282,37 @@
         <h4>Got it, thanks</h4>
         <p>We'll let you know when there's something worth sharing. In the meantime, consider booking with a physio if you haven't already.</p>
         <button class="btn btn-secondary" data-click="closeEmailModal()" style="margin-top:20px;">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="daily-quiz-overlay" id="dailyQuizOverlay" aria-hidden="true">
+    <div class="daily-quiz-modal" role="dialog" aria-modal="true" aria-labelledby="dailyQuizTitle" aria-describedby="dailyQuizIntro" tabindex="-1">
+      <button class="daily-quiz-close" data-click="closeDailyQuiz()" aria-label="Close">×</button>
+      <div class="daily-quiz-eyebrow">Daily Quiz</div>
+      <div class="daily-quiz-meta" aria-label="Quiz metadata">
+        <span id="dailyQuizDate">Today</span>
+        <span id="dailyQuizCount">3 Questions</span>
+        <span id="dailyQuizMix">Mixed Set</span>
+      </div>
+      <div id="dailyQuizQuestionView">
+        <h3 id="dailyQuizTitle">Three quick clinical questions</h3>
+        <p class="daily-quiz-intro" id="dailyQuizIntro">Question 1 of 3</p>
+        <div class="daily-quiz-questions" id="dailyQuizQuestions"></div>
+        <div class="daily-quiz-actions daily-quiz-question-actions" id="dailyQuizQuestionActions" hidden>
+          <button class="btn btn-secondary" id="dailyQuizBackBtn" data-click="goToPreviousDailyQuizQuestion()" hidden>← Back</button>
+          <button class="btn btn-primary" id="dailyQuizSubmitBtn" data-click="submitDailyQuizAnswer()">Check answers →</button>
+        </div>
+      </div>
+      <div class="daily-quiz-results-view" id="dailyQuizResultsView" hidden>
+        <h3 id="dailyQuizResultsTitle">Today&rsquo;s results</h3>
+        <p class="daily-quiz-results-summary" id="dailyQuizResultsSummary">You completed today&rsquo;s set.</p>
+        <div class="daily-quiz-results-score" id="dailyQuizResultsScore">0 / 3 correct</div>
+        <div class="daily-quiz-results-list" id="dailyQuizResultsList"></div>
+        <div class="daily-quiz-actions">
+          <button class="btn btn-secondary" id="dailyQuizShareBtn" data-click="shareDailyQuizResults()">Share</button>
+          <button class="btn btn-secondary" data-click="closeDailyQuiz()">Done</button>
+        </div>
       </div>
     </div>
   </div>
@@ -648,6 +682,11 @@
     <p class="subtitle">Filter by region and difficulty to target your current coursework, or mix it up for clinical rotation prep.</p>
     <div class="cs-library-tools">
       <button class="btn btn-secondary cs-how-btn" type="button" data-click="openCaseInstructions()">How it works</button>
+      <div class="cs-daily-quiz-stack">
+        <button class="btn btn-secondary cs-how-btn cs-daily-quiz-btn" type="button" id="csDailyQuizBtn" data-click="openDailyQuiz(true)">Daily Quiz</button>
+        <p class="cs-daily-quiz-status" id="csDailyQuizStatus" aria-live="polite">Today&#8217;s 3 questions are ready.</p>
+        <p class="cs-daily-quiz-streak" id="csDailyQuizStreak" aria-live="polite">Start your streak.</p>
+      </div>
     </div>
     <div class="section-label" style="margin-top:24px;">1. Select Region</div>
     <div class="chip-group" id="csRegionChips">
@@ -913,6 +952,7 @@
 
 <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script>
 <script src="cases/case-library.js?v=20260311r12"></script>
-<script src="assets/app.js?v=20260313r25"></script>
+<script src="quizzes/questions-bank.js?v=20260315r01"></script>
+<script src="assets/app.js?v=20260315r22"></script>
 </body>
 </html>
