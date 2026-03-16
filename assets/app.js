@@ -29,6 +29,7 @@ const EIDOS_DAILY_QUIZ_REGION_COOLDOWN_DAYS = 10;
 
 let _dailyQuizBankCache = null;
 let _dailyQuizBankPromise = null;
+let _dailyQuizBankScriptPromise = null;
 let _dailyQuizStateCache = null;
 let _dailyQuizStatePromise = null;
 let _dailyQuizStreakCache = null;
@@ -9067,13 +9068,64 @@ function dqBuildRuntimeQuizSet(questions, todayKey) {
   };
 }
 
+function dqGetAuthoredQuestionBank() {
+  return Array.isArray(window.EIDOS_DAILY_QUIZ_FOLDER_BANK)
+    ? window.EIDOS_DAILY_QUIZ_FOLDER_BANK.filter(dqIsValidQuestion)
+    : [];
+}
+
+function dqLoadQuestionBankScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.onload = () => resolve(src);
+    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    document.head.appendChild(script);
+  });
+}
+
+async function dqEnsureAuthoredQuestionBankLoaded() {
+  const existingBank = dqGetAuthoredQuestionBank();
+  if (existingBank.length) return existingBank;
+  if (_dailyQuizBankScriptPromise) return _dailyQuizBankScriptPromise;
+
+  _dailyQuizBankScriptPromise = (async () => {
+    const cacheKey = `${window.__EIDOS_BUILD || 'eidos'}-${Date.now()}`;
+    const candidates = Array.from(new Set([
+      'quizzes/questions-bank.js',
+      './quizzes/questions-bank.js',
+      '../quizzes/questions-bank.js',
+      '/quizzes/questions-bank.js'
+    ]));
+
+    let lastError = null;
+    for (const baseSrc of candidates) {
+      const src = `${baseSrc}?v=${encodeURIComponent(cacheKey)}`;
+      try {
+        await dqLoadQuestionBankScript(src);
+      } catch (error) {
+        lastError = error;
+      }
+      const loadedBank = dqGetAuthoredQuestionBank();
+      if (loadedBank.length) return loadedBank;
+    }
+
+    throw lastError || new Error('daily_quiz_bank_unavailable');
+  })();
+
+  try {
+    return await _dailyQuizBankScriptPromise;
+  } finally {
+    _dailyQuizBankScriptPromise = null;
+  }
+}
+
 async function dqLoadQuestionBank() {
   if (Array.isArray(_dailyQuizBankCache) && _dailyQuizBankCache.length) return _dailyQuizBankCache;
   if (_dailyQuizBankPromise) return _dailyQuizBankPromise;
   _dailyQuizBankPromise = (async () => {
-    const authoredBank = Array.isArray(window.EIDOS_DAILY_QUIZ_FOLDER_BANK)
-      ? window.EIDOS_DAILY_QUIZ_FOLDER_BANK.filter(dqIsValidQuestion)
-      : [];
+    const authoredBank = await dqEnsureAuthoredQuestionBankLoaded();
     if (!authoredBank.length) {
       throw new Error('daily_quiz_bank_unavailable');
     }
