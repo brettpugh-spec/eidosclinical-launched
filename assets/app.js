@@ -9093,6 +9093,10 @@ async function dqEnsureAuthoredQuestionBankLoaded() {
   _dailyQuizBankScriptPromise = (async () => {
     const cacheKey = `${window.__EIDOS_BUILD || 'eidos'}-${Date.now()}`;
     const candidates = Array.from(new Set([
+      '/assets/questions-bank.js',
+      'assets/questions-bank.js',
+      './assets/questions-bank.js',
+      '../assets/questions-bank.js',
       '/quizzes/questions-bank.js',
       'quizzes/questions-bank.js',
       './quizzes/questions-bank.js',
