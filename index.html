@@ -26,7 +26,7 @@
 <meta name="twitter:description" content="Clinical intelligence for MSK — differential diagnosis, clinical case simulation, and patient-facing assessment guidance." />
 <meta name="twitter:image" content="https://eidosclinical.com/og-image.png" />
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/app.css?v=20260315-12">
+<link rel="stylesheet" href="assets/app.css?v=20260315-14">
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-3N26ED0PYE"></script>
 <script>
@@ -287,17 +287,16 @@
   </div>
 
   <div class="daily-quiz-overlay" id="dailyQuizOverlay" aria-hidden="true">
-    <div class="daily-quiz-modal" role="dialog" aria-modal="true" aria-labelledby="dailyQuizTitle" aria-describedby="dailyQuizIntro" tabindex="-1">
+    <div class="daily-quiz-modal" role="dialog" aria-modal="true" aria-labelledby="dailyQuizTitle" aria-describedby="dailyQuizDate" tabindex="-1">
       <button class="daily-quiz-close" data-click="closeDailyQuiz()" aria-label="Close">×</button>
       <div class="daily-quiz-eyebrow">Daily Quiz</div>
       <div class="daily-quiz-meta" aria-label="Quiz metadata">
         <span id="dailyQuizDate">Today</span>
         <span id="dailyQuizCount">3 Questions</span>
-        <span id="dailyQuizMix">Mixed Set</span>
       </div>
       <div id="dailyQuizQuestionView">
-        <h3 id="dailyQuizTitle">Three quick clinical questions</h3>
-        <p class="daily-quiz-intro" id="dailyQuizIntro">Question 1 of 3</p>
+        <h3 class="daily-quiz-title" id="dailyQuizTitle">Daily Quiz</h3>
+        <div class="daily-quiz-progress" id="dailyQuizProgress" aria-label="Question progress"></div>
         <div class="daily-quiz-questions" id="dailyQuizQuestions"></div>
         <div class="daily-quiz-actions daily-quiz-question-actions" id="dailyQuizQuestionActions" hidden>
           <button class="btn btn-secondary" id="dailyQuizBackBtn" data-click="goToPreviousDailyQuizQuestion()" hidden>← Back</button>
@@ -953,6 +952,6 @@
 <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script>
 <script src="cases/case-library.js?v=20260311r12"></script>
 <script src="quizzes/questions-bank.js?v=20260315r01"></script>
-<script src="assets/app.js?v=20260315r23"></script>
+<script src="assets/app.js?v=20260315r27"></script>
 </body>
 </html>

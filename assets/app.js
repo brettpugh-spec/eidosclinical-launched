@@ -7422,27 +7422,12 @@ function initDailyQuizOverlayClose() {
 }
 
 function dqGetShareUrl() {
-  let baseUrl = '';
   try {
-    const canonical = document.querySelector('link[rel="canonical"]');
-    if (canonical && canonical.href) baseUrl = canonical.href;
+    if (/^https?:$/i.test(window.location.protocol)) {
+      return `${window.location.origin}/daily`;
+    }
   } catch (_) {}
-  if (!baseUrl) {
-    try {
-      if (/^https?:$/i.test(window.location.protocol)) {
-        baseUrl = `${window.location.origin}${window.location.pathname}`;
-      }
-    } catch (_) {}
-  }
-  if (!baseUrl) baseUrl = 'https://eidosclinical.com/';
-  try {
-    const url = new URL(baseUrl);
-    url.searchParams.set('dailyQuiz', '1');
-    url.hash = '';
-    return url.toString();
-  } catch (_) {
-    return 'https://eidosclinical.com/?dailyQuiz=1';
-  }
+  return 'https://eidosclinical.com/daily';
 }
 
 function dqBuildShareText(score, total) {
@@ -8300,6 +8285,22 @@ function dqDayNumberToDate(dayNumber) {
   const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
   const dd = String(date.getUTCDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
+}
+
+function dqFormatDisplayDate(dateStr) {
+  const match = String(dateStr || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return String(dateStr || '');
+  try {
+    const displayDate = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC'
+    }).format(displayDate);
+  } catch (_) {
+    return String(dateStr || '');
+  }
 }
 
 function dqRotationIndex(dateStr, size, anchorIndex) {
@@ -9286,14 +9287,28 @@ function dqInitDailyQuiz() {
   });
 }
 
+function eidosGetNormalizedPathname() {
+  try {
+    return String(window.location.pathname || '').replace(/\/+$/, '') || '/';
+  } catch (_) {
+    return '/';
+  }
+}
+
 function dqShouldOpenFromUrl() {
   try {
+    const path = eidosGetNormalizedPathname();
+    if (path === '/daily') return true;
     const params = new URLSearchParams(window.location.search || '');
     const raw = String(params.get('dailyQuiz') || '').trim().toLowerCase();
     return raw === '1' || raw === 'true' || raw === 'open';
   } catch (_) {
     return false;
   }
+}
+
+function csShouldOpenFromUrl() {
+  return eidosGetNormalizedPathname() === '/cases';
 }
 
 function dqShouldAutoOpen(options = {}) {
@@ -9321,7 +9336,7 @@ function dqRenderQuizState(quizState) {
   const questionViewEl = document.getElementById('dailyQuizQuestionView');
   const resultsViewEl = document.getElementById('dailyQuizResultsView');
   const titleEl = document.getElementById('dailyQuizTitle');
-  const introEl = document.getElementById('dailyQuizIntro');
+  const progressEl = document.getElementById('dailyQuizProgress');
   const questionsEl = document.getElementById('dailyQuizQuestions');
   const questionActionsEl = document.getElementById('dailyQuizQuestionActions');
   const backBtn = document.getElementById('dailyQuizBackBtn');
@@ -9338,14 +9353,28 @@ function dqRenderQuizState(quizState) {
     sum + (String(selectedAnswers[String(question.id || '').trim()] || '') === question.correctAnswer ? 1 : 0)
   ), 0);
 
-  if (dateEl) dateEl.textContent = quiz.date;
+  if (dateEl) dateEl.textContent = dqFormatDisplayDate(quiz.date);
   if (countEl) countEl.textContent = `${questions.length} Questions`;
   if (mixEl) mixEl.textContent = 'Mixed Set';
   if (questionViewEl) questionViewEl.hidden = !!quizState.answered;
   if (resultsViewEl) resultsViewEl.hidden = !quizState.answered;
 
-  if (titleEl) titleEl.textContent = 'Three quick clinical questions';
-  if (introEl) introEl.textContent = `Question ${currentQuestionIndex + 1} of ${questions.length}`;
+  if (titleEl) titleEl.textContent = 'Daily Quiz';
+  if (progressEl && !quizState.answered) {
+    progressEl.innerHTML = '';
+    progressEl.setAttribute('role', 'progressbar');
+    progressEl.setAttribute('aria-valuemin', '1');
+    progressEl.setAttribute('aria-valuemax', String(questions.length));
+    progressEl.setAttribute('aria-valuenow', String(currentQuestionIndex + 1));
+    questions.forEach((question, index) => {
+      const segment = document.createElement('span');
+      segment.className = 'daily-quiz-progress-segment';
+      if (index < currentQuestionIndex) segment.classList.add('is-complete');
+      if (index === currentQuestionIndex) segment.classList.add('is-active');
+      if (quizState.answered || index < currentQuestionIndex) segment.classList.add('is-complete');
+      progressEl.appendChild(segment);
+    });
+  }
 
   if (questionsEl && !quizState.answered) {
     questionsEl.innerHTML = '';
@@ -9428,8 +9457,8 @@ function dqRenderQuizState(quizState) {
   if (quizState.answered) {
     if (resultsTitleEl) resultsTitleEl.textContent = 'Today\'s results';
     if (resultsSummaryEl) resultsSummaryEl.textContent = correctCount === questions.length
-      ? 'Nice work. You completed today\'s set.'
-      : 'Today\'s set is complete.';
+      ? 'Nice work. You completed today\'s set. See you tomorrow!'
+      : 'Today\'s set is complete. See you tomorrow!';
     if (resultsScoreEl) resultsScoreEl.textContent = `${correctCount} / ${questions.length} correct`;
     if (shareBtn) dqUpdateShareButtonState('Share');
   }
@@ -13906,8 +13935,10 @@ document.addEventListener('DOMContentLoaded', () => {
   _trackPageView();
   const sharedReportPayload = csReadSharedReportPayloadFromUrl();
   const restoredFromSharedReport = !!(sharedReportPayload && csRestoreFromSharedReportPayload(sharedReportPayload));
+  const openDailyFromRoute = dqShouldOpenFromUrl();
+  const openCasesFromRoute = csShouldOpenFromUrl();
   const uiRoute = getUIRoute();
-  const shouldTryRestore = !restoredFromSharedReport && uiRoute === 'split';
+  const shouldTryRestore = !restoredFromSharedReport && !openDailyFromRoute && !openCasesFromRoute && uiRoute === 'split';
   const restored = shouldTryRestore ? loadFromStorage() : false;
   const hp = document.getElementById('pageHome');
   const container = document.querySelector('.container');
@@ -13921,8 +13952,26 @@ document.addEventListener('DOMContentLoaded', () => {
     if (container) container.style.display = '';
     setUIRoute('split');
     window.scrollTo({ top: 0, behavior: 'instant' });
+  } else if (openCasesFromRoute) {
+    if (hp) hp.style.display = 'none';
+    if (container) container.style.display = '';
+    document.body.style.overflow = '';
+    csResetChallengeContext({ preserveOwnerLinks: true, clearRoute: true });
+    csState.active = true;
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active','slide-fwd','slide-back'));
+    const target = document.getElementById('pagCS0');
+    if (target) target.classList.add('active');
+    const pb = document.getElementById('progressBar');
+    if (pb) pb.style.display = 'none';
+    const sob = document.getElementById('startOverBtn');
+    if (sob) sob.style.display = 'none';
+    setUIRoute('split');
+    setLastPageId('pagCS0');
+    csRefreshCasePoolStatus();
+    csRenderProgress('pagCS0');
+    window.scrollTo({ top: 0, behavior: 'instant' });
   } else {
-    if (uiRoute === 'split') {
+    if (uiRoute === 'split' && !openDailyFromRoute) {
       if (hp) hp.style.display = 'none';
       if (container) container.style.display = '';
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active','slide-fwd','slide-back'));
@@ -13970,7 +14019,7 @@ document.addEventListener('DOMContentLoaded', () => {
   csInitMobileDdxPicker();
   csInitInlineDdxDropdown();
   dqInitDailyQuiz();
-  if (dqShouldOpenFromUrl()) {
+  if (openDailyFromRoute) {
     requestAnimationFrame(() => {
       openDailyQuiz(true).catch(() => {});
     });
