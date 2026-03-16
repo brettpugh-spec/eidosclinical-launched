@@ -15,7 +15,7 @@ function getUIRoute() {
 const EIDOS_LAST_PAGE_KEY = 'eidos_last_page_id';
 const EIDOS_LAST_MODE_KEY = 'eidos_last_mode';
 const EIDOS_CONTACT_KEY = 'eidos_contact_v1';
-const EIDOS_DAILY_QUIZ_STORAGE_KEY = 'eidos_daily_quiz_state_v6';
+const EIDOS_DAILY_QUIZ_STORAGE_KEY = 'eidos_daily_quiz_state_v7';
 const EIDOS_DAILY_QUIZ_STREAK_STORAGE_KEY = 'eidos_daily_quiz_streak_v1';
 const EIDOS_DAILY_QUIZ_TIME_ZONE = 'America/Los_Angeles';
 const EIDOS_DAILY_QUIZ_TYPES = ['diagnosis', 'best_next_test', 'red_flag', 'likely_structure', 'management', 'differential_discriminator'];
@@ -8303,6 +8303,13 @@ function dqFormatDisplayDate(dateStr) {
   }
 }
 
+function dqGetBankVersion() {
+  const explicitVersion = String(window.EIDOS_DAILY_QUIZ_FOLDER_BANK_VERSION || '').trim();
+  if (explicitVersion) return explicitVersion;
+  const count = Math.max(0, Math.floor(Number(window.EIDOS_DAILY_QUIZ_FOLDER_BANK_COUNT) || 0));
+  return count ? `count:${count}` : 'unversioned';
+}
+
 function dqRotationIndex(dateStr, size, anchorIndex) {
   if (!size) return 0;
   const raw = dqDateToDayNumber(dateStr) - dqDateToDayNumber(EIDOS_DAILY_QUIZ_ANCHOR_DATE) + Number(anchorIndex || 0);
@@ -8884,6 +8891,7 @@ function dqRecordQuizCompletion(dateStr = dqGetTodayKey()) {
 
 function dqSaveQuizState(stateObj) {
   if (!stateObj || typeof stateObj !== 'object') return;
+  stateObj.bankVersion = String(stateObj.bankVersion || dqGetBankVersion());
   _dailyQuizStateCache = stateObj;
   try {
     localStorage.setItem(EIDOS_DAILY_QUIZ_STORAGE_KEY, JSON.stringify(stateObj));
@@ -9066,11 +9074,10 @@ async function dqLoadQuestionBank() {
     const authoredBank = Array.isArray(window.EIDOS_DAILY_QUIZ_FOLDER_BANK)
       ? window.EIDOS_DAILY_QUIZ_FOLDER_BANK.filter(dqIsValidQuestion)
       : [];
-    _dailyQuizBankCache = authoredBank.length
-      ? authoredBank
-      : Array.isArray(EIDOS_DAILY_QUIZ_PRELOADED_BANK)
-        ? EIDOS_DAILY_QUIZ_PRELOADED_BANK.filter(dqIsValidQuestion)
-        : [];
+    if (!authoredBank.length) {
+      throw new Error('daily_quiz_bank_unavailable');
+    }
+    _dailyQuizBankCache = authoredBank;
     return _dailyQuizBankCache;
   })();
   try {
@@ -9221,6 +9228,7 @@ async function dqBuildFreshQuizState(existingRaw, todayKey) {
   const quiz = dqBuildRuntimeQuizSet(selectedQuestions, todayKey);
   if (quiz) window.EIDOS_DAILY_QUIZ = quiz;
   return {
+    bankVersion: dqGetBankVersion(),
     quiz,
     answered: false,
     dismissed: false,
@@ -9233,7 +9241,8 @@ async function dqBuildFreshQuizState(existingRaw, todayKey) {
 
 function dqGetCurrentQuizState() {
   const todayKey = dqGetTodayKey();
-  if (_dailyQuizStateCache && _dailyQuizStateCache.quiz && _dailyQuizStateCache.quiz.date === todayKey && dqGetQuizQuestions(_dailyQuizStateCache.quiz).length) {
+  const bankVersion = dqGetBankVersion();
+  if (_dailyQuizStateCache && _dailyQuizStateCache.quiz && _dailyQuizStateCache.quiz.date === todayKey && dqGetQuizQuestions(_dailyQuizStateCache.quiz).length && String(_dailyQuizStateCache.bankVersion || '') === bankVersion) {
     _dailyQuizStateCache.selectedAnswers = dqNormalizeSelectedAnswers(_dailyQuizStateCache.selectedAnswers, _dailyQuizStateCache.quiz);
     _dailyQuizStateCache.currentQuestionIndex = dqNormalizeQuestionIndex(_dailyQuizStateCache.currentQuestionIndex, _dailyQuizStateCache.quiz);
     if (_dailyQuizStateCache.answered) dqRecordQuizCompletion(todayKey);
@@ -9241,7 +9250,7 @@ function dqGetCurrentQuizState() {
     return _dailyQuizStateCache;
   }
   const raw = dqReadStoredStateRaw();
-  if (!raw || !raw.quiz || raw.quiz.date !== todayKey || !dqGetQuizQuestions(raw.quiz).length) return null;
+  if (!raw || !raw.quiz || raw.quiz.date !== todayKey || !dqGetQuizQuestions(raw.quiz).length || String(raw.bankVersion || '') !== bankVersion) return null;
   raw.history = dqNormalizeHistory(raw.history);
   raw.selectedAnswers = dqNormalizeSelectedAnswers(raw.selectedAnswers, raw.quiz);
   raw.currentQuestionIndex = dqNormalizeQuestionIndex(raw.currentQuestionIndex, raw.quiz);
@@ -9258,8 +9267,9 @@ async function dqEnsureCurrentQuizState() {
   if (_dailyQuizStatePromise) return _dailyQuizStatePromise;
   _dailyQuizStatePromise = (async () => {
     const todayKey = dqGetTodayKey();
+    const bankVersion = dqGetBankVersion();
     const raw = dqReadStoredStateRaw();
-    if (raw && raw.quiz && raw.quiz.date === todayKey && dqGetQuizQuestions(raw.quiz).length) {
+    if (raw && raw.quiz && raw.quiz.date === todayKey && dqGetQuizQuestions(raw.quiz).length && String(raw.bankVersion || '') === bankVersion) {
       raw.history = dqNormalizeHistory(raw.history);
       raw.selectedAnswers = dqNormalizeSelectedAnswers(raw.selectedAnswers, raw.quiz);
       raw.currentQuestionIndex = dqNormalizeQuestionIndex(raw.currentQuestionIndex, raw.quiz);

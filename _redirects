@@ -1,3 +1,9 @@
+/daily/assets/* /assets/:splat 200
+/daily/quizzes/* /quizzes/:splat 200
+/daily/cases/* /cases/:splat 200
 /daily /index.html 200
+/cases/assets/* /assets/:splat 200
+/cases/quizzes/* /quizzes/:splat 200
+/cases/cases/* /cases/:splat 200
 /cases /index.html 200
 /* /index.html 200
