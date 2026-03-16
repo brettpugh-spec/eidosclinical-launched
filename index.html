@@ -25,8 +25,17 @@
 <meta name="twitter:title" content="EIDOS &mdash; Clinical Intelligence for MSK" />
 <meta name="twitter:description" content="Clinical intelligence for MSK — differential diagnosis, clinical case simulation, and patient-facing assessment guidance." />
 <meta name="twitter:image" content="https://eidosclinical.com/og-image.png" />
+<script>
+  (function() {
+    var base = document.createElement('base');
+    base.href = window.location.protocol === 'file:'
+      ? window.location.href.replace(/[^/]*$/, '')
+      : '/';
+    document.head.appendChild(base);
+  })();
+</script>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/app.css?v=20260315-15">
+<link rel="stylesheet" href="assets/app.css?v=20260315-16">
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-3N26ED0PYE"></script>
 <script>
@@ -249,7 +258,7 @@
         <div class="about-modal-social">
           <p class="about-modal-social-text">For more clinical content and updates, follow me on Instagram <a href="https://instagram.com/brettpughpt" target="_blank" rel="noopener noreferrer">@brettpughpt</a>.</p>
           <a href="https://instagram.com/brettpughpt" target="_blank" rel="noopener noreferrer" aria-label="Open Instagram profile @brettpughpt">
-            <img class="about-modal-social-qr" src="/assets/brettpughpt_qr.png" alt="Instagram QR code for @brettpughpt" loading="lazy" />
+            <img class="about-modal-social-qr" src="assets/brettpughpt_qr.png" alt="Instagram QR code for @brettpughpt" loading="lazy" />
           </a>
         </div>
       </div>
@@ -402,14 +411,14 @@
           <div class="pain-map-panel">
             <div class="pain-map-view-label">Front</div>
             <div class="pain-figure-wrap" style="--figure-aspect: 512 / 1306;">
-              <img class="pain-diagram-img" src="/assets/front.png?v=20260304-1110" alt="Front body pain diagram" />
+              <img class="pain-diagram-img" src="assets/front.png?v=20260304-1110" alt="Front body pain diagram" />
               <div class="pain-pin-layer" data-pin-layer="front"></div>
             </div>
           </div>
           <div class="pain-map-panel">
             <div class="pain-map-view-label">Back</div>
             <div class="pain-figure-wrap" style="--figure-aspect: 512 / 1306;">
-              <img class="pain-diagram-img" src="/assets/back.PNG?v=20260304-1110" alt="Back body pain diagram" />
+              <img class="pain-diagram-img" src="assets/back.PNG?v=20260304-1110" alt="Back body pain diagram" />
               <div class="pain-pin-layer" data-pin-layer="back"></div>
             </div>
           </div>
@@ -950,8 +959,8 @@
 <div id="eidos-toast" role="status" aria-live="polite"></div>
 
 <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script>
-<script src="/cases/case-library.js?v=20260311r12"></script>
-<script src="/quizzes/questions-bank.js?v=20260316r05"></script>
-<script src="/assets/app.js?v=20260316r32"></script>
+<script src="cases/case-library.js?v=20260311r12"></script>
+<script src="quizzes/questions-bank.js?v=20260316r05"></script>
+<script src="assets/app.js?v=20260316r32"></script>
 </body>
 </html>
