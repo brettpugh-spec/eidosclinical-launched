@@ -9074,6 +9074,23 @@ function dqGetAuthoredQuestionBank() {
     : [];
 }
 
+function dqGetBundledQuestionBank() {
+  return Array.isArray(EIDOS_DAILY_QUIZ_PRELOADED_BANK)
+    ? EIDOS_DAILY_QUIZ_PRELOADED_BANK.filter(dqIsValidQuestion)
+    : [];
+}
+
+function dqRegisterQuestionBank(bank, versionLabel = '') {
+  const normalizedBank = Array.isArray(bank) ? bank.filter(dqIsValidQuestion) : [];
+  if (!normalizedBank.length) return [];
+  try {
+    window.EIDOS_DAILY_QUIZ_FOLDER_BANK = normalizedBank;
+    window.EIDOS_DAILY_QUIZ_FOLDER_BANK_COUNT = normalizedBank.length;
+    if (versionLabel) window.EIDOS_DAILY_QUIZ_FOLDER_BANK_VERSION = String(versionLabel);
+  } catch (_) {}
+  return normalizedBank;
+}
+
 function dqLoadQuestionBankScript(src) {
   return new Promise((resolve, reject) => {
     const script = document.createElement('script');
@@ -9096,11 +9113,7 @@ async function dqEnsureAuthoredQuestionBankLoaded() {
       '/assets/questions-bank.js',
       'assets/questions-bank.js',
       './assets/questions-bank.js',
-      '../assets/questions-bank.js',
-      '/quizzes/questions-bank.js',
-      'quizzes/questions-bank.js',
-      './quizzes/questions-bank.js',
-      '../quizzes/questions-bank.js'
+      '../assets/questions-bank.js'
     ]));
 
     let lastError = null;
@@ -9114,6 +9127,13 @@ async function dqEnsureAuthoredQuestionBankLoaded() {
       const loadedBank = dqGetAuthoredQuestionBank();
       if (loadedBank.length) return loadedBank;
     }
+
+    const bundledSource = dqGetBundledQuestionBank();
+    const bundledBank = dqRegisterQuestionBank(
+      bundledSource,
+      `bundled:${window.__EIDOS_BUILD || 'eidos'}:${bundledSource.length}`
+    );
+    if (bundledBank.length) return bundledBank;
 
     throw lastError || new Error('daily_quiz_bank_unavailable');
   })();
