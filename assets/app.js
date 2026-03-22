@@ -1,4 +1,4 @@
-window.__EIDOS_BUILD = 'kit-uid-4625fa2552-r16';
+window.__EIDOS_BUILD = 'kit-uid-4625fa2552-r17';
 window.__EIDOS_FILE = '/Users/brettpugh/Desktop/eidos/index.html';
 
 // ══════════════════════════════════════════
@@ -44,6 +44,46 @@ function setLastPageId(pageId) {
 
 function getLastPageId() {
   try { return sessionStorage.getItem(EIDOS_LAST_PAGE_KEY) || ''; } catch (_) { return ''; }
+}
+
+function eidosGetNormalizedPathname() {
+  try {
+    return String(window.location.pathname || '').replace(/\/+$/, '') || '/';
+  } catch (_) {
+    return '/';
+  }
+}
+
+function eidosCanReplaceTopLevelRoute() {
+  try {
+    return /^https?:$/i.test(window.location.protocol)
+      && !!window.history
+      && typeof window.history.replaceState === 'function';
+  } catch (_) {
+    return false;
+  }
+}
+
+function eidosReplaceTopLevelRoute(pathname = '/') {
+  try {
+    if (!eidosCanReplaceTopLevelRoute()) return;
+    const rawPath = String(pathname || '/').trim();
+    const normalizedPath = (rawPath.startsWith('/') ? rawPath : `/${rawPath}`).replace(/\/+$/, '') || '/';
+    const hasSearch = !!String(window.location.search || '');
+    const hasHash = !!String(window.location.hash || '');
+    if (eidosGetNormalizedPathname() === normalizedPath && !hasSearch && !hasHash) return;
+    window.history.replaceState(null, '', normalizedPath);
+  } catch (_) {}
+}
+
+function eidosClearDirectRoute() {
+  try {
+    const currentPath = eidosGetNormalizedPathname();
+    const params = new URLSearchParams(window.location.search || '');
+    if (currentPath === '/daily' || currentPath === '/cases' || params.has('dailyQuiz')) {
+      eidosReplaceTopLevelRoute('/');
+    }
+  } catch (_) {}
 }
 
 function persistRefreshRoute() {
@@ -280,6 +320,7 @@ function showHomePage() {
   syncHomeBackgroundHeight();
   requestAnimationFrame(syncHomeBackgroundHeight);
   setTimeout(syncHomeBackgroundHeight, 160);
+  eidosClearDirectRoute();
   // Preserve in-progress state when returning to Home.
   // State is only cleared via explicit reset/start-over actions.
   persistRefreshRoute();
@@ -7405,12 +7446,14 @@ async function openDailyQuiz(forceManual = true) {
 }
 
 function closeDailyQuiz() {
+  const openedFromRoute = dqShouldOpenFromUrl();
   const quizState = dqGetCurrentQuizState();
   if (quizState) {
     quizState.dismissed = true;
     dqSaveQuizState(quizState);
   }
   _closeModal('dailyQuizOverlay');
+  if (openedFromRoute) eidosReplaceTopLevelRoute('/');
 }
 
 function initDailyQuizOverlayClose() {
@@ -9371,14 +9414,6 @@ function dqInitDailyQuiz() {
   dqEnsureCurrentQuizState().catch(() => {
     dqRenderLauncherState(null);
   });
-}
-
-function eidosGetNormalizedPathname() {
-  try {
-    return String(window.location.pathname || '').replace(/\/+$/, '') || '/';
-  } catch (_) {
-    return '/';
-  }
 }
 
 function dqShouldOpenFromUrl() {
