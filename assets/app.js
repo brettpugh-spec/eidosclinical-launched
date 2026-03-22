@@ -1,4 +1,4 @@
-window.__EIDOS_BUILD = 'kit-uid-4625fa2552-r16';
+window.__EIDOS_BUILD = 'kit-uid-4625fa2552-r17';
 window.__EIDOS_FILE = '/Users/brettpugh/Desktop/eidos/index.html';
 
 // ══════════════════════════════════════════
@@ -15,8 +15,9 @@ function getUIRoute() {
 const EIDOS_LAST_PAGE_KEY = 'eidos_last_page_id';
 const EIDOS_LAST_MODE_KEY = 'eidos_last_mode';
 const EIDOS_CONTACT_KEY = 'eidos_contact_v1';
-const EIDOS_DAILY_QUIZ_STORAGE_KEY = 'eidos_daily_quiz_state_v5';
+const EIDOS_DAILY_QUIZ_STORAGE_KEY = 'eidos_daily_quiz_state_v7';
 const EIDOS_DAILY_QUIZ_STREAK_STORAGE_KEY = 'eidos_daily_quiz_streak_v1';
+const EIDOS_DAILY_QUIZ_TIME_ZONE = 'America/Los_Angeles';
 const EIDOS_DAILY_QUIZ_TYPES = ['diagnosis', 'best_next_test', 'red_flag', 'likely_structure', 'management', 'differential_discriminator'];
 const EIDOS_DAILY_QUIZ_DIFFICULTIES = ['beginner', 'intermediate', 'advanced'];
 const EIDOS_DAILY_QUIZ_ANCHOR_DATE = '2026-03-15';
@@ -28,6 +29,7 @@ const EIDOS_DAILY_QUIZ_REGION_COOLDOWN_DAYS = 10;
 
 let _dailyQuizBankCache = null;
 let _dailyQuizBankPromise = null;
+let _dailyQuizBankScriptPromise = null;
 let _dailyQuizStateCache = null;
 let _dailyQuizStatePromise = null;
 let _dailyQuizStreakCache = null;
@@ -42,6 +44,46 @@ function setLastPageId(pageId) {
 
 function getLastPageId() {
   try { return sessionStorage.getItem(EIDOS_LAST_PAGE_KEY) || ''; } catch (_) { return ''; }
+}
+
+function eidosGetNormalizedPathname() {
+  try {
+    return String(window.location.pathname || '').replace(/\/+$/, '') || '/';
+  } catch (_) {
+    return '/';
+  }
+}
+
+function eidosCanReplaceTopLevelRoute() {
+  try {
+    return /^https?:$/i.test(window.location.protocol)
+      && !!window.history
+      && typeof window.history.replaceState === 'function';
+  } catch (_) {
+    return false;
+  }
+}
+
+function eidosReplaceTopLevelRoute(pathname = '/') {
+  try {
+    if (!eidosCanReplaceTopLevelRoute()) return;
+    const rawPath = String(pathname || '/').trim();
+    const normalizedPath = (rawPath.startsWith('/') ? rawPath : `/${rawPath}`).replace(/\/+$/, '') || '/';
+    const hasSearch = !!String(window.location.search || '');
+    const hasHash = !!String(window.location.hash || '');
+    if (eidosGetNormalizedPathname() === normalizedPath && !hasSearch && !hasHash) return;
+    window.history.replaceState(null, '', normalizedPath);
+  } catch (_) {}
+}
+
+function eidosClearDirectRoute() {
+  try {
+    const currentPath = eidosGetNormalizedPathname();
+    const params = new URLSearchParams(window.location.search || '');
+    if (currentPath === '/daily' || currentPath === '/cases' || params.has('dailyQuiz')) {
+      eidosReplaceTopLevelRoute('/');
+    }
+  } catch (_) {}
 }
 
 function persistRefreshRoute() {
@@ -278,6 +320,7 @@ function showHomePage() {
   syncHomeBackgroundHeight();
   requestAnimationFrame(syncHomeBackgroundHeight);
   setTimeout(syncHomeBackgroundHeight, 160);
+  eidosClearDirectRoute();
   // Preserve in-progress state when returning to Home.
   // State is only cleared via explicit reset/start-over actions.
   persistRefreshRoute();
@@ -7403,12 +7446,14 @@ async function openDailyQuiz(forceManual = true) {
 }
 
 function closeDailyQuiz() {
+  const openedFromRoute = dqShouldOpenFromUrl();
   const quizState = dqGetCurrentQuizState();
   if (quizState) {
     quizState.dismissed = true;
     dqSaveQuizState(quizState);
   }
   _closeModal('dailyQuizOverlay');
+  if (openedFromRoute) eidosReplaceTopLevelRoute('/');
 }
 
 function initDailyQuizOverlayClose() {
@@ -7421,27 +7466,12 @@ function initDailyQuizOverlayClose() {
 }
 
 function dqGetShareUrl() {
-  let baseUrl = '';
   try {
-    const canonical = document.querySelector('link[rel="canonical"]');
-    if (canonical && canonical.href) baseUrl = canonical.href;
+    if (/^https?:$/i.test(window.location.protocol)) {
+      return `${window.location.origin}/daily`;
+    }
   } catch (_) {}
-  if (!baseUrl) {
-    try {
-      if (/^https?:$/i.test(window.location.protocol)) {
-        baseUrl = `${window.location.origin}${window.location.pathname}`;
-      }
-    } catch (_) {}
-  }
-  if (!baseUrl) baseUrl = 'https://eidosclinical.com/';
-  try {
-    const url = new URL(baseUrl);
-    url.searchParams.set('dailyQuiz', '1');
-    url.hash = '';
-    return url.toString();
-  } catch (_) {
-    return 'https://eidosclinical.com/?dailyQuiz=1';
-  }
+  return 'https://eidosclinical.com/daily';
 }
 
 function dqBuildShareText(score, total) {
@@ -8265,6 +8295,19 @@ const DQ_MANAGEMENT_TEMPLATES = [
 ];
 
 function dqGetTodayKey() {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: EIDOS_DAILY_QUIZ_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(new Date());
+    const map = {};
+    parts.forEach((part) => {
+      if (part && part.type && part.type !== 'literal') map[part.type] = part.value;
+    });
+    if (map.year && map.month && map.day) return `${map.year}-${map.month}-${map.day}`;
+  } catch (_) {}
   const now = new Date();
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -8276,6 +8319,39 @@ function dqDateToDayNumber(dateStr) {
   const match = String(dateStr || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return 0;
   return Math.floor(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / 86400000);
+}
+
+function dqDayNumberToDate(dayNumber) {
+  const safeDay = Math.floor(Number(dayNumber) || 0);
+  if (!safeDay) return '';
+  const date = new Date(safeDay * 86400000);
+  const yyyy = date.getUTCFullYear();
+  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(date.getUTCDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function dqFormatDisplayDate(dateStr) {
+  const match = String(dateStr || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return String(dateStr || '');
+  try {
+    const displayDate = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC'
+    }).format(displayDate);
+  } catch (_) {
+    return String(dateStr || '');
+  }
+}
+
+function dqGetBankVersion() {
+  const explicitVersion = String(window.EIDOS_DAILY_QUIZ_FOLDER_BANK_VERSION || '').trim();
+  if (explicitVersion) return explicitVersion;
+  const count = Math.max(0, Math.floor(Number(window.EIDOS_DAILY_QUIZ_FOLDER_BANK_COUNT) || 0));
+  return count ? `count:${count}` : 'unversioned';
 }
 
 function dqRotationIndex(dateStr, size, anchorIndex) {
@@ -8859,6 +8935,7 @@ function dqRecordQuizCompletion(dateStr = dqGetTodayKey()) {
 
 function dqSaveQuizState(stateObj) {
   if (!stateObj || typeof stateObj !== 'object') return;
+  stateObj.bankVersion = String(stateObj.bankVersion || dqGetBankVersion());
   _dailyQuizStateCache = stateObj;
   try {
     localStorage.setItem(EIDOS_DAILY_QUIZ_STORAGE_KEY, JSON.stringify(stateObj));
@@ -8928,6 +9005,51 @@ function dqCollectRecentValues(history, todayKey, windowDays, field) {
   return values;
 }
 
+function dqHashString(value) {
+  let hash = 2166136261;
+  const input = String(value || '');
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function dqDeterministicShuffle(items, seed, keyFn) {
+  const list = Array.isArray(items) ? items.slice() : [];
+  const getKey = typeof keyFn === 'function'
+    ? keyFn
+    : (item, index) => {
+        if (item && typeof item === 'object' && item.id != null) return String(item.id);
+        return `${index}:${String(item)}`;
+      };
+  return list
+    .map((item, index) => {
+      const itemKey = String(getKey(item, index) || `${index}`);
+      return {
+        item,
+        index,
+        itemKey,
+        score: dqHashString(`${seed}|${itemKey}|${index}`)
+      };
+    })
+    .sort((a, b) => (
+      a.score - b.score ||
+      a.itemKey.localeCompare(b.itemKey) ||
+      a.index - b.index
+    ))
+    .map(entry => entry.item);
+}
+
+function dqGetDifficultyPlan(todayKey, count = 3) {
+  const dayNumber = dqDateToDayNumber(todayKey);
+  const includeAdvanced = !!dayNumber && dayNumber % 5 === 0;
+  const plan = includeAdvanced
+    ? ['beginner', 'intermediate', 'advanced']
+    : ['beginner', 'intermediate', dayNumber % 2 === 0 ? 'beginner' : 'intermediate'];
+  return dqDeterministicShuffle(plan.slice(0, count), `${todayKey}|difficulty-plan`, (value, index) => `${index}:${value}`);
+}
+
 function dqPickRandom(items) {
   if (!Array.isArray(items) || !items.length) return null;
   return items[Math.floor(Math.random() * items.length)] || null;
@@ -8989,18 +9111,92 @@ function dqBuildRuntimeQuizSet(questions, todayKey) {
   };
 }
 
+function dqGetAuthoredQuestionBank() {
+  return Array.isArray(window.EIDOS_DAILY_QUIZ_FOLDER_BANK)
+    ? window.EIDOS_DAILY_QUIZ_FOLDER_BANK.filter(dqIsValidQuestion)
+    : [];
+}
+
+function dqGetBundledQuestionBank() {
+  return Array.isArray(EIDOS_DAILY_QUIZ_PRELOADED_BANK)
+    ? EIDOS_DAILY_QUIZ_PRELOADED_BANK.filter(dqIsValidQuestion)
+    : [];
+}
+
+function dqRegisterQuestionBank(bank, versionLabel = '') {
+  const normalizedBank = Array.isArray(bank) ? bank.filter(dqIsValidQuestion) : [];
+  if (!normalizedBank.length) return [];
+  try {
+    window.EIDOS_DAILY_QUIZ_FOLDER_BANK = normalizedBank;
+    window.EIDOS_DAILY_QUIZ_FOLDER_BANK_COUNT = normalizedBank.length;
+    if (versionLabel) window.EIDOS_DAILY_QUIZ_FOLDER_BANK_VERSION = String(versionLabel);
+  } catch (_) {}
+  return normalizedBank;
+}
+
+function dqLoadQuestionBankScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.onload = () => resolve(src);
+    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    document.head.appendChild(script);
+  });
+}
+
+async function dqEnsureAuthoredQuestionBankLoaded() {
+  const existingBank = dqGetAuthoredQuestionBank();
+  if (existingBank.length) return existingBank;
+  if (_dailyQuizBankScriptPromise) return _dailyQuizBankScriptPromise;
+
+  _dailyQuizBankScriptPromise = (async () => {
+    const cacheKey = `${window.__EIDOS_BUILD || 'eidos'}-${Date.now()}`;
+    const candidates = Array.from(new Set([
+      '/assets/questions-bank.js',
+      'assets/questions-bank.js',
+      './assets/questions-bank.js',
+      '../assets/questions-bank.js'
+    ]));
+
+    let lastError = null;
+    for (const baseSrc of candidates) {
+      const src = `${baseSrc}?v=${encodeURIComponent(cacheKey)}`;
+      try {
+        await dqLoadQuestionBankScript(src);
+      } catch (error) {
+        lastError = error;
+      }
+      const loadedBank = dqGetAuthoredQuestionBank();
+      if (loadedBank.length) return loadedBank;
+    }
+
+    const bundledSource = dqGetBundledQuestionBank();
+    const bundledBank = dqRegisterQuestionBank(
+      bundledSource,
+      `bundled:${window.__EIDOS_BUILD || 'eidos'}:${bundledSource.length}`
+    );
+    if (bundledBank.length) return bundledBank;
+
+    throw lastError || new Error('daily_quiz_bank_unavailable');
+  })();
+
+  try {
+    return await _dailyQuizBankScriptPromise;
+  } finally {
+    _dailyQuizBankScriptPromise = null;
+  }
+}
+
 async function dqLoadQuestionBank() {
   if (Array.isArray(_dailyQuizBankCache) && _dailyQuizBankCache.length) return _dailyQuizBankCache;
   if (_dailyQuizBankPromise) return _dailyQuizBankPromise;
   _dailyQuizBankPromise = (async () => {
-    const authoredBank = Array.isArray(window.EIDOS_DAILY_QUIZ_FOLDER_BANK)
-      ? window.EIDOS_DAILY_QUIZ_FOLDER_BANK.filter(dqIsValidQuestion)
-      : [];
-    _dailyQuizBankCache = authoredBank.length
-      ? authoredBank
-      : Array.isArray(EIDOS_DAILY_QUIZ_PRELOADED_BANK)
-        ? EIDOS_DAILY_QUIZ_PRELOADED_BANK.filter(dqIsValidQuestion)
-        : [];
+    const authoredBank = await dqEnsureAuthoredQuestionBankLoaded();
+    if (!authoredBank.length) {
+      throw new Error('daily_quiz_bank_unavailable');
+    }
+    _dailyQuizBankCache = authoredBank;
     return _dailyQuizBankCache;
   })();
   try {
@@ -9045,47 +9241,98 @@ function dqTakeQuestionFromPool(pool, selectedQuestions, options = {}) {
   return candidates[0] || null;
 }
 
-function dqSelectQuestionsFromBank(questionBank, history, todayKey, count = 3) {
+function dqCanUseQuestionForDate(candidate, selectedQuestions, recentIds, recentDiagnosis, recentRegions, options = {}) {
+  if (!candidate) return false;
+  const idKey = String(candidate.id || '').trim();
+  const diagnosisKey = String(candidate.diagnosisKey || '').trim();
+  const regionKey = String(candidate.region || '').trim();
+  if (!options.allowRecentId && recentIds.has(idKey)) return false;
+  if (!options.allowRecentDiagnosis && recentDiagnosis.has(diagnosisKey)) return false;
+  if (!options.allowRecentRegion && recentRegions.has(regionKey)) return false;
+  return dqCanUseQuestionInSet(selectedQuestions, candidate, options);
+}
+
+function dqPickDeterministicQuestion(pool, selectedQuestions, todayKey, slotIndex, difficulty, recentIds, recentDiagnosis, recentRegions, options = {}) {
+  const candidates = pool.filter((question) => {
+    if (difficulty && question.difficulty !== difficulty) return false;
+    return dqCanUseQuestionForDate(question, selectedQuestions, recentIds, recentDiagnosis, recentRegions, options);
+  });
+  return dqDeterministicShuffle(
+    candidates,
+    `${todayKey}|slot:${slotIndex}|difficulty:${difficulty || 'any'}|pass:${JSON.stringify(options)}`,
+    question => `${question.id}|${question.region}|${question.diagnosisKey}|${question.difficulty}`
+  )[0] || null;
+}
+
+function dqSelectQuestionsForDate(questionBank, history, todayKey, count = 3) {
   const questions = Array.isArray(questionBank) ? questionBank.filter(dqIsValidQuestion) : [];
   if (!questions.length) return [];
   const normalizedHistory = dqNormalizeHistory(history);
   const recentIds = dqCollectRecentValues(normalizedHistory, todayKey, EIDOS_DAILY_QUIZ_ID_COOLDOWN_DAYS, 'id');
-  let pool = questions.filter(question => !recentIds.has(String(question.id || '').trim()));
-  if (pool.length < count) pool = questions.slice();
-  if (!normalizedHistory.length) pool = questions.slice();
-
+  const recentDiagnosis = dqCollectRecentValues(normalizedHistory, todayKey, EIDOS_DAILY_QUIZ_DIAGNOSIS_COOLDOWN_DAYS, 'diagnosisKey');
+  const recentRegions = dqCollectRecentValues(normalizedHistory, todayKey, EIDOS_DAILY_QUIZ_REGION_COOLDOWN_DAYS, 'region');
+  const preferredPool = questions.filter(question => !recentIds.has(String(question.id || '').trim()));
+  const pool = preferredPool.length >= count ? preferredPool : questions.slice();
   const selectedQuestions = [];
-  const availableDifficulties = dqShuffleRandom(
-    EIDOS_DAILY_QUIZ_DIFFICULTIES.filter(difficulty => pool.some(question => question.difficulty === difficulty))
-  );
-
-  availableDifficulties.forEach((difficulty) => {
-    if (selectedQuestions.length >= count) return;
-    const picked = dqTakeQuestionFromPool(pool, selectedQuestions, { difficulty });
-    if (picked) selectedQuestions.push(picked);
-  });
-
+  const difficultyPlan = dqGetDifficultyPlan(todayKey, count);
   const selectionPasses = [
     {},
-    { allowRegionRepeat: true },
-    { allowRegionRepeat: true, allowDiagnosisRepeat: true }
+    { allowRecentRegion: true },
+    { allowRecentRegion: true, allowRecentDiagnosis: true },
+    { allowRecentRegion: true, allowRecentDiagnosis: true, allowRegionRepeat: true },
+    { allowRecentRegion: true, allowRecentDiagnosis: true, allowRegionRepeat: true, allowDiagnosisRepeat: true },
+    { allowRecentId: true, allowRecentRegion: true, allowRecentDiagnosis: true, allowRegionRepeat: true, allowDiagnosisRepeat: true }
   ];
 
-  selectionPasses.forEach((options) => {
+  selectionPasses.forEach((options, passIndex) => {
     if (selectedQuestions.length >= count) return;
-    availableDifficulties.forEach((difficulty) => {
+    difficultyPlan.forEach((difficulty, slotIndex) => {
       if (selectedQuestions.length >= count) return;
-      const picked = dqTakeQuestionFromPool(pool, selectedQuestions, Object.assign({ difficulty }, options));
+      const picked = dqPickDeterministicQuestion(
+        pool,
+        selectedQuestions,
+        todayKey,
+        slotIndex + (passIndex * 10),
+        difficulty,
+        recentIds,
+        recentDiagnosis,
+        recentRegions,
+        options
+      );
       if (picked) selectedQuestions.push(picked);
     });
     while (selectedQuestions.length < count) {
-      const picked = dqTakeQuestionFromPool(pool, selectedQuestions, options);
+      const picked = dqPickDeterministicQuestion(
+        pool,
+        selectedQuestions,
+        todayKey,
+        selectedQuestions.length + (passIndex * 10),
+        '',
+        recentIds,
+        recentDiagnosis,
+        recentRegions,
+        options
+      );
       if (!picked) break;
       selectedQuestions.push(picked);
     }
   });
 
   return selectedQuestions.slice(0, count);
+}
+
+function dqBuildGlobalSelectionHistory(questionBank, todayKey, count = 3) {
+  const todayDay = dqDateToDayNumber(todayKey);
+  if (!todayDay) return [];
+  const startDay = Math.max(1, todayDay - Math.max(EIDOS_DAILY_QUIZ_ID_COOLDOWN_DAYS, EIDOS_DAILY_QUIZ_DIAGNOSIS_COOLDOWN_DAYS, EIDOS_DAILY_QUIZ_REGION_COOLDOWN_DAYS));
+  const history = [];
+  for (let day = startDay; day < todayDay; day += 1) {
+    const dateKey = dqDayNumberToDate(day);
+    if (!dateKey) continue;
+    const selectedQuestions = dqSelectQuestionsForDate(questionBank, history, dateKey, count);
+    history.push(...dqBuildHistoryEntries({ date: dateKey, questions: selectedQuestions }));
+  }
+  return dqNormalizeHistory(history);
 }
 
 async function dqBuildFreshQuizState(existingRaw, todayKey) {
@@ -9095,10 +9342,12 @@ async function dqBuildFreshQuizState(existingRaw, todayKey) {
   const history = dqNormalizeHistory((existingRaw && existingRaw.history) || []);
   const nextHistory = prevQuiz ? dqNormalizeHistory(history.concat(dqBuildHistoryEntries(prevQuiz))) : history;
   const questionBank = await dqLoadQuestionBank();
-  const selectedQuestions = dqSelectQuestionsFromBank(questionBank, nextHistory, todayKey, 3);
+  const globalHistory = dqBuildGlobalSelectionHistory(questionBank, todayKey, 3);
+  const selectedQuestions = dqSelectQuestionsForDate(questionBank, globalHistory, todayKey, 3);
   const quiz = dqBuildRuntimeQuizSet(selectedQuestions, todayKey);
   if (quiz) window.EIDOS_DAILY_QUIZ = quiz;
   return {
+    bankVersion: dqGetBankVersion(),
     quiz,
     answered: false,
     dismissed: false,
@@ -9111,7 +9360,8 @@ async function dqBuildFreshQuizState(existingRaw, todayKey) {
 
 function dqGetCurrentQuizState() {
   const todayKey = dqGetTodayKey();
-  if (_dailyQuizStateCache && _dailyQuizStateCache.quiz && _dailyQuizStateCache.quiz.date === todayKey && dqGetQuizQuestions(_dailyQuizStateCache.quiz).length) {
+  const bankVersion = dqGetBankVersion();
+  if (_dailyQuizStateCache && _dailyQuizStateCache.quiz && _dailyQuizStateCache.quiz.date === todayKey && dqGetQuizQuestions(_dailyQuizStateCache.quiz).length && String(_dailyQuizStateCache.bankVersion || '') === bankVersion) {
     _dailyQuizStateCache.selectedAnswers = dqNormalizeSelectedAnswers(_dailyQuizStateCache.selectedAnswers, _dailyQuizStateCache.quiz);
     _dailyQuizStateCache.currentQuestionIndex = dqNormalizeQuestionIndex(_dailyQuizStateCache.currentQuestionIndex, _dailyQuizStateCache.quiz);
     if (_dailyQuizStateCache.answered) dqRecordQuizCompletion(todayKey);
@@ -9119,7 +9369,7 @@ function dqGetCurrentQuizState() {
     return _dailyQuizStateCache;
   }
   const raw = dqReadStoredStateRaw();
-  if (!raw || !raw.quiz || raw.quiz.date !== todayKey || !dqGetQuizQuestions(raw.quiz).length) return null;
+  if (!raw || !raw.quiz || raw.quiz.date !== todayKey || !dqGetQuizQuestions(raw.quiz).length || String(raw.bankVersion || '') !== bankVersion) return null;
   raw.history = dqNormalizeHistory(raw.history);
   raw.selectedAnswers = dqNormalizeSelectedAnswers(raw.selectedAnswers, raw.quiz);
   raw.currentQuestionIndex = dqNormalizeQuestionIndex(raw.currentQuestionIndex, raw.quiz);
@@ -9136,8 +9386,9 @@ async function dqEnsureCurrentQuizState() {
   if (_dailyQuizStatePromise) return _dailyQuizStatePromise;
   _dailyQuizStatePromise = (async () => {
     const todayKey = dqGetTodayKey();
+    const bankVersion = dqGetBankVersion();
     const raw = dqReadStoredStateRaw();
-    if (raw && raw.quiz && raw.quiz.date === todayKey && dqGetQuizQuestions(raw.quiz).length) {
+    if (raw && raw.quiz && raw.quiz.date === todayKey && dqGetQuizQuestions(raw.quiz).length && String(raw.bankVersion || '') === bankVersion) {
       raw.history = dqNormalizeHistory(raw.history);
       raw.selectedAnswers = dqNormalizeSelectedAnswers(raw.selectedAnswers, raw.quiz);
       raw.currentQuestionIndex = dqNormalizeQuestionIndex(raw.currentQuestionIndex, raw.quiz);
@@ -9167,12 +9418,18 @@ function dqInitDailyQuiz() {
 
 function dqShouldOpenFromUrl() {
   try {
+    const path = eidosGetNormalizedPathname();
+    if (path === '/daily') return true;
     const params = new URLSearchParams(window.location.search || '');
     const raw = String(params.get('dailyQuiz') || '').trim().toLowerCase();
     return raw === '1' || raw === 'true' || raw === 'open';
   } catch (_) {
     return false;
   }
+}
+
+function csShouldOpenFromUrl() {
+  return eidosGetNormalizedPathname() === '/cases';
 }
 
 function dqShouldAutoOpen(options = {}) {
@@ -9200,7 +9457,7 @@ function dqRenderQuizState(quizState) {
   const questionViewEl = document.getElementById('dailyQuizQuestionView');
   const resultsViewEl = document.getElementById('dailyQuizResultsView');
   const titleEl = document.getElementById('dailyQuizTitle');
-  const introEl = document.getElementById('dailyQuizIntro');
+  const progressEl = document.getElementById('dailyQuizProgress');
   const questionsEl = document.getElementById('dailyQuizQuestions');
   const questionActionsEl = document.getElementById('dailyQuizQuestionActions');
   const backBtn = document.getElementById('dailyQuizBackBtn');
@@ -9217,14 +9474,28 @@ function dqRenderQuizState(quizState) {
     sum + (String(selectedAnswers[String(question.id || '').trim()] || '') === question.correctAnswer ? 1 : 0)
   ), 0);
 
-  if (dateEl) dateEl.textContent = quiz.date;
+  if (dateEl) dateEl.textContent = dqFormatDisplayDate(quiz.date);
   if (countEl) countEl.textContent = `${questions.length} Questions`;
   if (mixEl) mixEl.textContent = 'Mixed Set';
   if (questionViewEl) questionViewEl.hidden = !!quizState.answered;
   if (resultsViewEl) resultsViewEl.hidden = !quizState.answered;
 
-  if (titleEl) titleEl.textContent = 'Three quick clinical questions';
-  if (introEl) introEl.textContent = `Question ${currentQuestionIndex + 1} of ${questions.length}`;
+  if (titleEl) titleEl.textContent = 'Daily Quiz';
+  if (progressEl && !quizState.answered) {
+    progressEl.innerHTML = '';
+    progressEl.setAttribute('role', 'progressbar');
+    progressEl.setAttribute('aria-valuemin', '1');
+    progressEl.setAttribute('aria-valuemax', String(questions.length));
+    progressEl.setAttribute('aria-valuenow', String(currentQuestionIndex + 1));
+    questions.forEach((question, index) => {
+      const segment = document.createElement('span');
+      segment.className = 'daily-quiz-progress-segment';
+      if (index < currentQuestionIndex) segment.classList.add('is-complete');
+      if (index === currentQuestionIndex) segment.classList.add('is-active');
+      if (quizState.answered || index < currentQuestionIndex) segment.classList.add('is-complete');
+      progressEl.appendChild(segment);
+    });
+  }
 
   if (questionsEl && !quizState.answered) {
     questionsEl.innerHTML = '';
@@ -9307,8 +9578,8 @@ function dqRenderQuizState(quizState) {
   if (quizState.answered) {
     if (resultsTitleEl) resultsTitleEl.textContent = 'Today\'s results';
     if (resultsSummaryEl) resultsSummaryEl.textContent = correctCount === questions.length
-      ? 'Nice work. You completed today\'s set.'
-      : 'Today\'s set is complete.';
+      ? 'Nice work. You completed today\'s set. See you tomorrow!'
+      : 'Today\'s set is complete. See you tomorrow!';
     if (resultsScoreEl) resultsScoreEl.textContent = `${correctCount} / ${questions.length} correct`;
     if (shareBtn) dqUpdateShareButtonState('Share');
   }
@@ -13785,8 +14056,10 @@ document.addEventListener('DOMContentLoaded', () => {
   _trackPageView();
   const sharedReportPayload = csReadSharedReportPayloadFromUrl();
   const restoredFromSharedReport = !!(sharedReportPayload && csRestoreFromSharedReportPayload(sharedReportPayload));
+  const openDailyFromRoute = dqShouldOpenFromUrl();
+  const openCasesFromRoute = csShouldOpenFromUrl();
   const uiRoute = getUIRoute();
-  const shouldTryRestore = !restoredFromSharedReport && uiRoute === 'split';
+  const shouldTryRestore = !restoredFromSharedReport && !openDailyFromRoute && !openCasesFromRoute && uiRoute === 'split';
   const restored = shouldTryRestore ? loadFromStorage() : false;
   const hp = document.getElementById('pageHome');
   const container = document.querySelector('.container');
@@ -13800,8 +14073,26 @@ document.addEventListener('DOMContentLoaded', () => {
     if (container) container.style.display = '';
     setUIRoute('split');
     window.scrollTo({ top: 0, behavior: 'instant' });
+  } else if (openCasesFromRoute) {
+    if (hp) hp.style.display = 'none';
+    if (container) container.style.display = '';
+    document.body.style.overflow = '';
+    csResetChallengeContext({ preserveOwnerLinks: true, clearRoute: true });
+    csState.active = true;
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active','slide-fwd','slide-back'));
+    const target = document.getElementById('pagCS0');
+    if (target) target.classList.add('active');
+    const pb = document.getElementById('progressBar');
+    if (pb) pb.style.display = 'none';
+    const sob = document.getElementById('startOverBtn');
+    if (sob) sob.style.display = 'none';
+    setUIRoute('split');
+    setLastPageId('pagCS0');
+    csRefreshCasePoolStatus();
+    csRenderProgress('pagCS0');
+    window.scrollTo({ top: 0, behavior: 'instant' });
   } else {
-    if (uiRoute === 'split') {
+    if (uiRoute === 'split' && !openDailyFromRoute) {
       if (hp) hp.style.display = 'none';
       if (container) container.style.display = '';
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active','slide-fwd','slide-back'));
@@ -13849,7 +14140,7 @@ document.addEventListener('DOMContentLoaded', () => {
   csInitMobileDdxPicker();
   csInitInlineDdxDropdown();
   dqInitDailyQuiz();
-  if (dqShouldOpenFromUrl()) {
+  if (openDailyFromRoute) {
     requestAnimationFrame(() => {
       openDailyQuiz(true).catch(() => {});
     });
